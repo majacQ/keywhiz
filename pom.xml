@@ -124,7 +124,7 @@
       <dependency>
         <groupId>com.beust</groupId>
         <artifactId>jcommander</artifactId>
-        <version>1.78</version>
+        <version>1.81</version>
       </dependency>
       <dependency>
         <groupId>com.fasterxml.jackson.core</groupId>
@@ -582,7 +582,7 @@
               <configuration>
                 <rules>
                   <evaluateBeanshell>
-                    <condition>javax.crypto.Cipher.getMaxAllowedKeyLength("AES") &gt; 128
+                    <condition>javax.crypto.Cipher.getMaxAllowedKeyLength("AES") > 128
                     </condition>
                     <message>
                       Please install the unlimited strength JCE crypt policy files for your Java
