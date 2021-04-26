@@ -41,12 +41,12 @@
     <!-- 1.2.0-1 is the last version of dropwizard-raven JAR. The development continues under dropwizard-sentry -->
     <dropwizard-raven.version>1.2.0-1</dropwizard-raven.version>
     <guice.version>4.2.3</guice.version>
-    <jackson.version>2.12.1</jackson.version>
+    <jackson.version>2.12.2</jackson.version>
     <jackson.databind.version>2.10.0.pr1</jackson.databind.version>
-    <jooq.version>3.14.7</jooq.version>
+    <jooq.version>3.14.8</jooq.version>
     <powermock.version>2.0.9</powermock.version>
     <slf4j.version>1.7.30</slf4j.version>
-    <mysql.version>8.0.22</mysql.version>
+    <mysql.version>8.0.24</mysql.version>
     <logback.version>1.2.3</logback.version>
 
     <custom.build.directory>target</custom.build.directory>
@@ -261,7 +261,7 @@
       <dependency>
         <groupId>org.apache.commons</groupId>
         <artifactId>commons-lang3</artifactId>
-        <version>3.11</version>
+        <version>3.12.0</version>
       </dependency>
       <dependency>
         <groupId>org.assertj</groupId>
@@ -291,7 +291,7 @@
       <dependency>
         <groupId>org.flywaydb</groupId>
         <artifactId>flyway-core</artifactId>
-        <version>7.5.2</version>
+        <version>7.8.1</version>
       </dependency>
       <dependency>
         <groupId>org.hibernate</groupId>
@@ -316,12 +316,12 @@
       <dependency>
         <groupId>de.svenkubiak</groupId>
         <artifactId>jBCrypt</artifactId>
-        <version>0.4.1</version>
+        <version>0.4.3</version>
       </dependency>
       <dependency>
         <groupId>org.mockito</groupId>
         <artifactId>mockito-core</artifactId>
-        <version>3.5.15</version>
+        <version>3.9.0</version>
       </dependency>
       <dependency>
         <groupId>org.slf4j</groupId>
@@ -618,7 +618,7 @@
         <plugin>
           <groupId>org.flywaydb</groupId>
           <artifactId>flyway-maven-plugin</artifactId>
-          <version>7.5.2</version>
+          <version>7.8.1</version>
         </plugin>
         <plugin>
           <groupId>org.codehaus.mojo</groupId>
