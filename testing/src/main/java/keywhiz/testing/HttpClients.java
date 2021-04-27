@@ -23,13 +23,11 @@ import java.security.KeyManagementException;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.security.UnrecoverableKeyException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import javax.annotation.Nullable;
-import javax.net.ssl.KeyManager;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
@@ -54,6 +52,9 @@ public class HttpClients {
 
   /**
    * Builds a localhost URL for testing given a path.
+   *
+   * @param path the path to test
+   * @return the URL constructed from the localhost Keywhiz address and the input path
    */
   public static HttpUrl testUrl(String path) {
     String urlString = "https://localhost:4445" + path;

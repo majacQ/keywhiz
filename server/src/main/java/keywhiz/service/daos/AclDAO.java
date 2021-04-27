@@ -37,8 +37,6 @@ import keywhiz.api.model.Secret;
 import keywhiz.api.model.SecretContent;
 import keywhiz.api.model.SecretSeries;
 import keywhiz.api.model.SecretSeriesAndContent;
-import keywhiz.jooq.tables.records.AccessgrantsRecord;
-import keywhiz.jooq.tables.records.MembershipsRecord;
 import keywhiz.jooq.tables.records.SecretsRecord;
 import keywhiz.log.AuditLog;
 import keywhiz.log.Event;
@@ -335,6 +333,34 @@ public class AclDAO {
         .map(row -> processSanitizedSecretRow(row, client));
   }
 
+  public List<SanitizedSecret> getBatchSanitizedSecretsFor(Client client, List<String> secretNames) {
+    checkNotNull(client);
+    checkArgument(!secretNames.isEmpty());
+
+    SelectQuery<Record> query = dslContext.select(SECRETS.fields())
+            .from(SECRETS)
+            .join(ACCESSGRANTS).on(SECRETS.ID.eq(ACCESSGRANTS.SECRETID))
+            .join(MEMBERSHIPS).on(ACCESSGRANTS.GROUPID.eq(MEMBERSHIPS.GROUPID))
+            .join(CLIENTS).on(CLIENTS.ID.eq(MEMBERSHIPS.CLIENTID))
+            .join(SECRETS_CONTENT).on(SECRETS_CONTENT.ID.eq(SECRETS.CURRENT))
+            .where(CLIENTS.NAME.eq(client.getName())
+                    .and(SECRETS.CURRENT.isNotNull())
+                    .and(SECRETS.NAME.in(secretNames)))
+            .getQuery();
+    query.addSelect(SECRETS_CONTENT.CONTENT_HMAC);
+    query.addSelect(SECRETS_CONTENT.CREATEDAT);
+    query.addSelect(SECRETS_CONTENT.CREATEDBY);
+    query.addSelect(SECRETS_CONTENT.METADATA);
+    query.addSelect(SECRETS_CONTENT.EXPIRY);
+    query.addSelect(ACCESSGRANTS.ROW_HMAC);
+    query.addSelect(MEMBERSHIPS.ROW_HMAC);
+    query.addSelect(MEMBERSHIPS.GROUPID);
+    query.addSelect(CLIENTS.ROW_HMAC);
+    query.addSelect(SECRETS.ROW_HMAC);
+
+    return query.fetch().map(row -> processSanitizedSecretRow(row, client));
+  }
+
   private SanitizedSecret processSanitizedSecretRow(Record row, Client client) {
     boolean rowHmacLog = config.getRowHmacCheck() == RowHmacCheck.DISABLED_BUT_LOG;
     boolean rowHmacFail = config.getRowHmacCheck() == RowHmacCheck.ENFORCED;
@@ -515,6 +541,7 @@ public class AclDAO {
   }
 
   /**
+   * @param configuration database information
    * @param client client to access secrets
    * @param secretName name of SecretSeries
    * @return Optional.absent() when secret unauthorized or not found.

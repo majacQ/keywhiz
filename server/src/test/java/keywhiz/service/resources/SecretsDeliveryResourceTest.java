@@ -24,7 +24,6 @@ import keywhiz.api.model.Client;
 import keywhiz.api.model.SanitizedSecret;
 import keywhiz.api.model.Secret;
 import keywhiz.service.daos.AclDAO;
-import keywhiz.service.daos.ClientDAO;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -56,7 +55,8 @@ public class SecretsDeliveryResourceTest {
 
   @Before public void setUp() {
     secretsDeliveryResource = new SecretsDeliveryResource(aclDAO);
-    client = new Client(0, "client_name", null, null, null, null, null, null, null, false, false);
+    client = new Client(0, "client_name", null, null, null, null, null, null, null, null, false, false
+    );
   }
 
   @Test public void returnsEmptyJsonArrayWhenUserHasNoSecrets() throws Exception {

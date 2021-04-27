@@ -23,6 +23,7 @@ import com.google.common.collect.ImmutableList;
 import io.dropwizard.auth.Auth;
 import io.dropwizard.jersey.params.LongParam;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -42,7 +43,7 @@ import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriBuilder;
 import keywhiz.api.ClientDetailResponse;
-import keywhiz.api.CreateClientRequest;
+import keywhiz.api.automation.v2.CreateClientRequestV2;
 import keywhiz.api.model.Client;
 import keywhiz.api.model.Group;
 import keywhiz.api.model.SanitizedSecret;
@@ -63,8 +64,9 @@ import org.slf4j.LoggerFactory;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 
 /**
- * @parentEndpointName clients-admin
- * @resourceDescription Create, retrieve, and delete clients
+ * parentEndpointName clients-admin
+ * <p>
+ * resourceDescription Create, retrieve, and delete clients
  */
 @Path("/admin/clients")
 @Produces(APPLICATION_JSON)
@@ -75,7 +77,8 @@ public class ClientsResource {
   private final ClientDAO clientDAO;
   private final AuditLog auditLog;
 
-  @Inject public ClientsResource(AclDAOFactory aclDAOFactory, ClientDAOFactory clientDAOFactory, AuditLog auditLog) {
+  @Inject public ClientsResource(AclDAOFactory aclDAOFactory, ClientDAOFactory clientDAOFactory,
+      AuditLog auditLog) {
     this.aclDAO = aclDAOFactory.readwrite();
     this.clientDAO = clientDAOFactory.readwrite();
     this.auditLog = auditLog;
@@ -90,14 +93,16 @@ public class ClientsResource {
   /**
    * Retrieve Client by a specified name, or all Clients if no name given
    *
-   * @excludeParams user
-   * @optionalParams name
+   * @param user the admin user retrieving this client
    * @param name the name of the Client to retrieve, if provided
-   *
-   * @description Returns a single Client or a set of all Clients for this user.
-   * Used by Keywhiz CLI and the web ui.
-   * @responseMessage 200 Found and retrieved Client(s)
-   * @responseMessage 404 Client with given name not found (if name provided)
+   * @return the named client, or all clients if no name is given
+   * <p>
+   * description Returns a single Client or a set of all Clients for this user. Used by Keywhiz CLI
+   * and the web ui.
+   * <p>
+   * responseMessage 200 Found and retrieved Client(s)
+   * <p>
+   * responseMessage 404 Client with given name not found (if name provided)
    */
   @Timed @ExceptionMetered
   @GET
@@ -122,27 +127,31 @@ public class ClientsResource {
   /**
    * Create Client
    *
-   * @excludeParams user
+   * @param user                the admin user creating this client
    * @param createClientRequest the JSON client request used to formulate the Client
-   *
-   * @description Creates a Client with the name from a valid client request.
-   * Used by Keywhiz CLI and the web ui.
-   * @responseMessage 200 Successfully created Client
-   * @responseMessage 409 Client with given name already exists
+   * @return 200 if the client is created successfully, 409 if it already exists
+   * <p>
+   * description Creates a Client with the name from a valid client request. Used by Keywhiz CLI and
+   * the web ui.
+   * <p>
+   * responseMessage 200 Successfully created Client
+   * <p>
+   * responseMessage 409 Client with given name already exists
    */
   @Timed @ExceptionMetered
   @POST
   @Consumes(APPLICATION_JSON)
   public Response createClient(@Auth User user,
-      @Valid CreateClientRequest createClientRequest) {
+      @Valid CreateClientRequestV2 createClientRequest) {
 
-    logger.info("User '{}' creating client '{}'.", user, createClientRequest.name);
+    logger.info("User '{}' creating client '{}'.", user, createClientRequest.name());
 
     long clientId;
     try {
-      clientId = clientDAO.createClient(createClientRequest.name, user.getName(), "");
-    } catch (DataAccessException e) {
-      logger.warn("Cannot create client {}: {}", createClientRequest.name, e);
+      clientId = clientDAO.createClient(createClientRequest.name(), user.getName(),
+          createClientRequest.description(), new URI(createClientRequest.spiffeId()));
+    } catch (DataAccessException | URISyntaxException e) {
+      logger.warn("Cannot create client {}: {}", createClientRequest.name(), e);
       throw new ConflictException("Conflict creating client.");
     }
 
@@ -152,7 +161,8 @@ public class ClientsResource {
         .entity(clientDetailResponseFromId(clientId))
         .build();
     if (response.getStatus() == HttpStatus.SC_CREATED) {
-      auditLog.recordEvent(new Event(Instant.now(), EventTag.CLIENT_CREATE, user.getName(), createClientRequest.name));
+      auditLog.recordEvent(new Event(Instant.now(), EventTag.CLIENT_CREATE, user.getName(),
+          createClientRequest.name()));
     }
     return response;
   }
@@ -160,13 +170,15 @@ public class ClientsResource {
   /**
    * Retrieve Client by ID
    *
-   * @excludeParams user
+   * @param user     the admin user retrieving this client
    * @param clientId the ID of the Client to retrieve
-   *
-   * @description Returns a single Client if found.
-   * Used by Keywhiz CLI and the web ui.
-   * @responseMessage 200 Found and retrieved Client with given ID
-   * @responseMessage 404 Client with given ID not Found
+   * @return the specified client if found
+   * <p>
+   * description Returns a single Client if found. Used by Keywhiz CLI and the web ui.
+   * <p>
+   * responseMessage 200 Found and retrieved Client with given ID
+   * <p>
+   * responseMessage 404 Client with given ID not Found
    */
   @Path("{clientId}")
   @Timed @ExceptionMetered
@@ -180,13 +192,15 @@ public class ClientsResource {
   /**
    * Delete Client by ID
    *
-   * @excludeParams user
+   * @param user     the admin user deleting this client
    * @param clientId the ID of the Client to be deleted
-   *
-   * @description Deletes a single Client if found.
-   * Used by Keywhiz CLI and the web ui.
-   * @responseMessage 200 Found and deleted Client with given ID
-   * @responseMessage 404 Client with given ID not Found
+   * @return 200 if the deletion was successful, 404 if the client was not found
+   * <p>
+   * description Deletes a single Client if found. Used by Keywhiz CLI and the web ui.
+   * <p>
+   * responseMessage 200 Found and deleted Client with given ID
+   * <p>
+   * responseMessage 404 Client with given ID not Found
    */
   @Path("{clientId}")
   @Timed @ExceptionMetered
@@ -201,7 +215,8 @@ public class ClientsResource {
 
     clientDAO.deleteClient(client.get());
 
-    auditLog.recordEvent(new Event(Instant.now(), EventTag.CLIENT_DELETE, user.getName(), client.get().getName()));
+    auditLog.recordEvent(
+        new Event(Instant.now(), EventTag.CLIENT_DELETE, user.getName(), client.get().getName()));
 
     return Response.noContent().build();
   }
@@ -221,7 +236,7 @@ public class ClientsResource {
   }
 
   private Client clientFromName(String clientName) {
-    Optional<Client> optionalClient = clientDAO.getClient(clientName);
+    Optional<Client> optionalClient = clientDAO.getClientByName(clientName);
     if (!optionalClient.isPresent()) {
       throw new NotFoundException("Client not found.");
     }

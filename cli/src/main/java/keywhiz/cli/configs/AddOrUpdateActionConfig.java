@@ -17,15 +17,14 @@
 package keywhiz.cli.configs;
 
 import com.beust.jcommander.Parameter;
-import com.beust.jcommander.Parameters;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
 import java.io.IOException;
-import java.util.List;
 import org.joda.time.DateTime;
 
+import static com.google.common.base.Strings.nullToEmpty;
 import static java.lang.String.format;
 
 public class AddOrUpdateActionConfig {
@@ -34,6 +33,9 @@ public class AddOrUpdateActionConfig {
 
   @Parameter(names = "--description", description = "Description of the item to add or update")
   public String description;
+
+  @Parameter(names = "--spiffeId", description = "Spiffe ID associated with a client (clients only)")
+  public String spiffeId;
 
   @Parameter(names = "--json", description = "Metadata JSON blob")
   public String json;
@@ -45,17 +47,17 @@ public class AddOrUpdateActionConfig {
   public String expiry;
 
   public String getDescription() {
-    String description = this.description;
-    if (description == null) {
-      return "";
-    }
-    return description;
+    return nullToEmpty(description);
+  }
+
+  public String getSpiffeId() {
+    return nullToEmpty(spiffeId);
   }
 
   public ImmutableMap<String, String> getMetadata(ObjectMapper mapper) {
     ImmutableMap<String, String> metadata = ImmutableMap.of();
     if (json != null && !json.isEmpty()) {
-      TypeReference typeRef = new TypeReference<ImmutableMap<String, String>>() {};
+      TypeReference<ImmutableMap<String, String>> typeRef = new TypeReference<>() {};
       try {
         metadata = mapper.readValue(json, typeRef);
       } catch (IOException e) {

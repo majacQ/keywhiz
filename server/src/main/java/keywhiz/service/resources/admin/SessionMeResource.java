@@ -16,8 +16,8 @@
 
 package keywhiz.service.resources.admin;
 
-import com.codahale.metrics.annotation.Timed;
 import com.codahale.metrics.annotation.ExceptionMetered;
+import com.codahale.metrics.annotation.Timed;
 import io.dropwizard.auth.Auth;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
@@ -29,9 +29,9 @@ import org.slf4j.LoggerFactory;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 
 /**
- * @parentEndpointName me
+ * parentEndpointName me
  *
- * @resourceDescription Retrieve user information
+ * resourceDescription Retrieve user information
  */
 @Path("/admin/me")
 public class SessionMeResource {
@@ -39,10 +39,11 @@ public class SessionMeResource {
 
   /**
    * Retrieve own user information
+   * @param user the current Keywhiz user
+   * @return information about the input user
    *
-   * @excludeParams user
-   * @description Returns JSON information about the current Keywhiz user
-   * @responseMessage 200 Found and retrieved User information
+   * description Returns JSON information about the current Keywhiz user
+   * responseMessage 200 Found and retrieved User information
    */
   @Timed @ExceptionMetered
   @GET

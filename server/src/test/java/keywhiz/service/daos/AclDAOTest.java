@@ -41,7 +41,6 @@ import org.junit.runner.RunWith;
 
 import static keywhiz.jooq.tables.Accessgrants.ACCESSGRANTS;
 import static keywhiz.jooq.tables.Clients.CLIENTS;
-import static keywhiz.jooq.tables.Groups.GROUPS;
 import static keywhiz.jooq.tables.Memberships.MEMBERSHIPS;
 import static keywhiz.jooq.tables.Secrets.SECRETS;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -71,10 +70,10 @@ public class AclDAOTest {
     groupDAO = groupDAOFactory.readwrite();
     aclDAO = aclDAOFactory.readwrite();
 
-    long id = clientDAO.createClient("client1", "creator", "");
+    long id = clientDAO.createClient("client1", "creator", "", null);
     client1 = clientDAO.getClientById(id).get();
 
-    id = clientDAO.createClient("client2", "creator", "");
+    id = clientDAO.createClient("client2", "creator", "", null);
     client2 = clientDAO.getClientById(id).get();
 
     id = groupDAO.createGroup("group1", "creator", "", ImmutableMap.of());
@@ -399,7 +398,7 @@ public class AclDAOTest {
         .where(CLIENTS.ID.eq(client2.getId()))
         .execute();
 
-    Client maliciousClient = clientDAO.getClient(client2.getName()).orElseThrow();
+    Client maliciousClient = clientDAO.getClientByName(client2.getName()).orElseThrow();
 
     String errorMessage = String.format(
         "Client HMAC verification failed for client: %s", client2.getName());
@@ -445,5 +444,25 @@ public class AclDAOTest {
 
   private int membershipsTableSize() {
     return jooqContext.fetchCount(MEMBERSHIPS);
+  }
+
+  @Test public void getBatchSanitizedSecretsSingle() {
+    aclDAO.enrollClient(jooqContext.configuration(), client1.getId(), group1.getId());
+    aclDAO.allowAccess(jooqContext.configuration(), secret1.getId(), group1.getId());
+
+    List<SanitizedSecret> secrets = aclDAO.getBatchSanitizedSecretsFor(client1, List.of(secret1.getName()));
+    assertThat(secrets).hasSize(1);
+    assertThat(secrets).contains(SanitizedSecret.fromSecret(secret1));
+  }
+
+  @Test public void getBatchSanitizedSecretsMultiple() {
+    aclDAO.enrollClient(jooqContext.configuration(), client1.getId(), group1.getId());
+    aclDAO.allowAccess(jooqContext.configuration(), secret1.getId(), group1.getId());
+    aclDAO.allowAccess(jooqContext.configuration(), secret2.getId(), group1.getId());
+
+    List<SanitizedSecret> secrets = aclDAO.getBatchSanitizedSecretsFor(client1, List.of(secret1.getName(), secret2.getName()));
+    assertThat(secrets).hasSize(2);
+    assertThat(secrets).contains(SanitizedSecret.fromSecret(secret1));
+    assertThat(secrets).contains(SanitizedSecret.fromSecret(secret2));
   }
 }

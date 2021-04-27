@@ -21,18 +21,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
-import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.ws.rs.BadRequestException;
 import keywhiz.api.model.Group;
-import keywhiz.api.model.SecretContent;
 import keywhiz.api.model.SecretSeries;
+import keywhiz.jooq.tables.SecretsContent;
+import keywhiz.jooq.tables.records.SecretsContentRecord;
 import keywhiz.jooq.tables.records.SecretsRecord;
 import keywhiz.service.config.Readonly;
 import keywhiz.service.crypto.RowHmacGenerator;
@@ -43,7 +35,18 @@ import org.jooq.Field;
 import org.jooq.Record;
 import org.jooq.Record1;
 import org.jooq.SelectQuery;
+import org.jooq.Table;
 import org.jooq.impl.DSL;
+
+import javax.annotation.Nullable;
+import javax.inject.Inject;
+import javax.ws.rs.BadRequestException;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static keywhiz.jooq.tables.Accessgrants.ACCESSGRANTS;
@@ -53,6 +56,7 @@ import static keywhiz.jooq.tables.SecretsContent.SECRETS_CONTENT;
 import static org.jooq.impl.DSL.decode;
 import static org.jooq.impl.DSL.least;
 import static org.jooq.impl.DSL.val;
+
 
 /**
  * Interacts with 'secrets' table and actions on {@link SecretSeries} entities.
@@ -180,22 +184,63 @@ public class SecretSeriesDAO {
     return Optional.ofNullable(r).map(secretSeriesMapper::map);
   }
 
+  public Optional<SecretSeries> getDeletedSecretSeriesById(long id) {
+    SecretsRecord r =
+        dslContext.fetchOne(SECRETS, SECRETS.ID.eq(id).and(SECRETS.CURRENT.isNull()));
+    return Optional.ofNullable(r).map(secretSeriesMapper::map);
+  }
+
   public Optional<SecretSeries> getSecretSeriesByName(String name) {
     SecretsRecord r =
         dslContext.fetchOne(SECRETS, SECRETS.NAME.eq(name).and(SECRETS.CURRENT.isNotNull()));
     return Optional.ofNullable(r).map(secretSeriesMapper::map);
   }
 
-  public ImmutableList<SecretSeries> getSecretSeries(@Nullable Long expireMaxTime, Group group) {
-    SelectQuery<Record> select = dslContext
-        .select().from(SECRETS).join(SECRETS_CONTENT).on(SECRETS.CURRENT.equal(SECRETS_CONTENT.ID))
-        .where(SECRETS.CURRENT.isNotNull()).getQuery();
+  public List<SecretSeries> getSecretSeriesByDeletedName(String name) {
+    String lookup = "." + name + ".%";
+    return dslContext.fetch(SECRETS, SECRETS.NAME.like(lookup).and(SECRETS.CURRENT.isNull())).map(secretSeriesMapper::map);
+  }
 
+  public List<SecretSeries> getMultipleSecretSeriesByName(List<String> names) {
+    return dslContext.fetch(SECRETS, SECRETS.NAME.in(names).and(SECRETS.CURRENT.isNotNull())).map(secretSeriesMapper::map);
+  }
+
+  public ImmutableList<SecretSeries> getSecretSeries(@Nullable Long expireMaxTime,
+      @Nullable Group group, @Nullable Long expireMinTime, @Nullable String minName,
+      @Nullable Integer limit) {
+    Table<SecretsContentRecord> secretsContentTable = SECRETS_CONTENT;
     if (expireMaxTime != null && expireMaxTime > 0) {
-      select.addOrderBy(SECRETS_CONTENT.EXPIRY.asc().nullsLast());
-      long now = System.currentTimeMillis() / 1000L;
-      select.addConditions(SECRETS_CONTENT.EXPIRY.greaterThan(now));
-      select.addConditions(SECRETS_CONTENT.EXPIRY.lessOrEqual(expireMaxTime));
+      // Force this join to use the index on the secrets_content.expiry
+      // field. The optimizer may fail to use this index when the SELECT
+      // examines a large number of rows, causing significant performance
+      // degradation.
+      secretsContentTable = secretsContentTable.useIndexForJoin("secrets_content_expiry");
+    }
+
+    SelectQuery<Record> select = dslContext
+          .select()
+          .from(SECRETS)
+          .join(secretsContentTable)
+          .on(SECRETS.CURRENT.equal(SECRETS_CONTENT.ID))
+          .where(SECRETS.CURRENT.isNotNull())
+          .getQuery();
+    select.addOrderBy(SECRETS_CONTENT.EXPIRY.asc(), SECRETS.NAME.asc());
+
+    // Set an upper bound on expiration dates
+    if (expireMaxTime != null && expireMaxTime > 0) {
+      // Set a lower bound of "now" on the expiration only if it isn't configured separately
+      if (expireMinTime == null || expireMinTime == 0) {
+        long now = System.currentTimeMillis() / 1000L;
+        select.addConditions(SECRETS_CONTENT.EXPIRY.greaterOrEqual(now));
+      }
+      select.addConditions(SECRETS_CONTENT.EXPIRY.lessThan(expireMaxTime));
+    }
+
+    if (expireMinTime != null && expireMinTime > 0) {
+      // set a lower bound on expiration dates, using the secret name as a tiebreaker
+      select.addConditions(SECRETS_CONTENT.EXPIRY.greaterThan(expireMinTime)
+          .or(SECRETS_CONTENT.EXPIRY.eq(expireMinTime)
+              .and(SECRETS.NAME.greaterOrEqual(minName))));
     }
 
     if (group != null) {
@@ -203,6 +248,11 @@ public class SecretSeriesDAO {
       select.addJoin(GROUPS, GROUPS.ID.eq(ACCESSGRANTS.GROUPID));
       select.addConditions(GROUPS.NAME.eq(group.getName()));
     }
+
+    if (limit != null && limit >= 0) {
+      select.addLimit(limit);
+    }
+
     List<SecretSeries> r = select.fetchInto(SECRETS).map(secretSeriesMapper);
     return ImmutableList.copyOf(r);
   }
@@ -279,8 +329,17 @@ public class SecretSeriesDAO {
     });
   }
 
+  public void renameSecretSeriesById(long secretId, String name, String creator, long now) {
+    dslContext.update(SECRETS)
+        .set(SECRETS.NAME, name)
+        .set(SECRETS.UPDATEDBY, creator)
+        .set(SECRETS.UPDATEDAT, now)
+        .where(SECRETS.ID.eq(secretId))
+        .execute();
+  }
+
   /**
-   * Count the number of deleted secret series
+   * @return the number of deleted secret series
    */
   public int countDeletedSecretSeries() {
     return dslContext.selectCount()
@@ -293,7 +352,8 @@ public class SecretSeriesDAO {
   /**
    * Identify all secret series which were deleted before the given date.
    *
-   * @param deleteBefore the cutoff date; secrets deleted before this date will be counted
+   * @param deleteBefore the cutoff date; secrets deleted before this date will be returned
+   * @return IDs for secret series deleted before this date
    */
   public List<Long> getIdsForSecretSeriesDeletedBeforeDate(DateTime deleteBefore) {
     long deleteBeforeSeconds = deleteBefore.getMillis() / 1000;
@@ -309,7 +369,7 @@ public class SecretSeriesDAO {
    * affect the `secrets_content` table.
    *
    * @param ids the IDs in the `secrets` table to be PERMANENTLY REMOVED
-   * @returns the number of records which were removed
+   * @return the number of records which were removed
    */
   public long dangerPermanentlyRemoveRecordsForGivenIDs(List<Long> ids) {
     return dslContext.deleteFrom(SECRETS)

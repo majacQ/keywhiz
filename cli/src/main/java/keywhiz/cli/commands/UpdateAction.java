@@ -22,7 +22,6 @@ import com.google.common.io.ByteStreams;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.UnsupportedEncodingException;
 import keywhiz.cli.configs.AddOrUpdateActionConfig;
 import keywhiz.cli.configs.UpdateActionConfig;
 import keywhiz.client.KeywhizClient;
@@ -59,6 +58,9 @@ public class UpdateAction implements Runnable {
     byte[] content = {};
     if (config.contentProvided) {
       content = readSecretContent();
+      if (content.length == 0) {
+        throw new IllegalArgumentException("Secret content must be provided if --content flag is present; check inputs");
+      }
     }
     partialUpdateSecret(secretName, content, config);
 

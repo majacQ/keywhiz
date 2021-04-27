@@ -46,7 +46,8 @@ public class SecretDeliveryResourceTest {
   @Mock ClientDAO clientDAO;
   SecretDeliveryResource secretDeliveryResource;
 
-  final Client client = new Client(0, "principal", null, null, null, null, null, null, null, false, false);
+  final Client client = new Client(0, "principal", null, null, null, null, null, null, null, null, false,
+      false);
   final Secret secret = new Secret(0, "secret_name", null, () -> "secret_value", "checksum", NOW, null, NOW, null,
       null, null, null, 0, 1L, NOW, null);
   final Secret secretBase64 = new Secret(1, "Base64With=", null, () -> "SGVsbG8=", "checksum", NOW, null, NOW,
@@ -89,7 +90,7 @@ public class SecretDeliveryResourceTest {
   @Test(expected = NotFoundException.class)
   public void returnsNotFoundWhenClientDoesNotExist() throws Exception {
     when(aclDAO.getSanitizedSecretFor(client, secret.getName())).thenReturn(Optional.empty());
-    when(clientDAO.getClient(client.getName())).thenReturn(Optional.empty());
+    when(clientDAO.getClientByName(client.getName())).thenReturn(Optional.empty());
     when(secretController.getSecretByName(secret.getName()))
         .thenReturn(Optional.of(secret));
 
@@ -99,7 +100,7 @@ public class SecretDeliveryResourceTest {
   @Test(expected = NotFoundException.class)
   public void returnsNotFoundWhenSecretDoesNotExist() throws Exception {
     when(aclDAO.getSanitizedSecretFor(client, "secret_name")).thenReturn(Optional.empty());
-    when(clientDAO.getClient(client.getName())).thenReturn(Optional.of(client));
+    when(clientDAO.getClientByName(client.getName())).thenReturn(Optional.of(client));
     when(secretController.getSecretByName("secret_name"))
         .thenReturn(Optional.empty());
 
@@ -109,7 +110,7 @@ public class SecretDeliveryResourceTest {
   @Test(expected = ForbiddenException.class)
   public void returnsUnauthorizedWhenDenied() throws Exception {
     when(aclDAO.getSanitizedSecretFor(client, secret.getName())).thenReturn(Optional.empty());
-    when(clientDAO.getClient(client.getName())).thenReturn(Optional.of(client));
+    when(clientDAO.getClientByName(client.getName())).thenReturn(Optional.of(client));
     when(secretController.getSecretByName(secret.getName()))
         .thenReturn(Optional.of(secret));
 

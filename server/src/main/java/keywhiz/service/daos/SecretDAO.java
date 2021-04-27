@@ -20,16 +20,6 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
-import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.util.AbstractMap.SimpleEntry;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.ws.rs.BadRequestException;
-import javax.ws.rs.NotFoundException;
 import keywhiz.api.automation.v2.PartialUpdateSecretRequestV2;
 import keywhiz.api.model.Group;
 import keywhiz.api.model.SanitizedSecret;
@@ -48,6 +38,18 @@ import org.jooq.Configuration;
 import org.jooq.DSLContext;
 import org.jooq.exception.DataAccessException;
 import org.jooq.impl.DSL;
+
+import javax.annotation.Nullable;
+import javax.inject.Inject;
+import javax.ws.rs.BadRequestException;
+import javax.ws.rs.NotFoundException;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.util.AbstractMap.SimpleEntry;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -135,6 +137,7 @@ public class SecretDAO {
   public long createOrUpdateSecret(String name, String encryptedSecret, String hmac, String creator,
       Map<String, String> metadata, long expiry, String description, @Nullable String type,
       @Nullable Map<String, String> generationOptions) {
+    // SecretController should have already checked that the contents are not empty
     return dslContext.transactionResult(configuration -> {
       long now = OffsetDateTime.now().toEpochSecond();
 
@@ -190,6 +193,8 @@ public class SecretDAO {
       String hmac = secretContent.hmac();
       // Mirrors hmac-creation in SecretController
       if (request.contentPresent()) {
+        checkArgument(!request.content().isEmpty());
+
         hmac = cryptographer.computeHmac(
             request.content().getBytes(UTF_8), "hmackey"); // Compute HMAC on base64 encoded data
         if (hmac == null) {
@@ -283,16 +288,56 @@ public class SecretDAO {
     return Optional.empty();
   }
 
-  /** @return list of secrets. can limit/sort by expiry, and for group if given */
+  /**
+   * @param names of secrets series to look up secrets by.
+   * @return Secrets matching input parameters.
+   */
+  public List<SecretSeriesAndContent> getSecretsByName(List<String> names) {
+    checkArgument(!names.isEmpty());
+
+    SecretContentDAO secretContentDAO = secretContentDAOFactory.using(dslContext.configuration());
+    SecretSeriesDAO secretSeriesDAO = secretSeriesDAOFactory.using(dslContext.configuration());
+
+    List<SecretSeries> multipleSeries = secretSeriesDAO.getMultipleSecretSeriesByName(names);
+
+    List<SecretSeriesAndContent> ret = new ArrayList<SecretSeriesAndContent>();
+
+    for (SecretSeries series : multipleSeries) {
+      if (series.currentVersion().isPresent()) {
+        long secretContentId = series.currentVersion().get();
+        Optional<SecretContent> secretContent =
+                secretContentDAO.getSecretContentById(secretContentId);
+        if (secretContent.isPresent()) {
+          ret.add(SecretSeriesAndContent.of(series, secretContent.get()));
+        } else {
+          throw new NotFoundException("Secret not found.");
+        }
+      }
+    }
+    return ret;
+  }
+
+  /**
+   * @param expireMaxTime the maximum expiration date for secrets to return (exclusive)
+   * @param group the group secrets returned must be assigned to
+   * @param expireMinTime the minimum expiration date for secrets to return (inclusive)
+   * @param minName the minimum name (alphabetically) that will be returned for secrets
+   *                expiring on expireMinTime (inclusive)
+   * @param limit the maximum number of secrets to return
+   *               which to start the list of returned secrets
+   * @return list of secrets. can limit/sort by expiry, and for group if given
+   */
   public ImmutableList<SecretSeriesAndContent> getSecrets(@Nullable Long expireMaxTime,
-      Group group) {
+      @Nullable Group group, @Nullable Long expireMinTime, @Nullable String minName,
+      @Nullable Integer limit) {
     return dslContext.transactionResult(configuration -> {
       SecretContentDAO secretContentDAO = secretContentDAOFactory.using(configuration);
       SecretSeriesDAO secretSeriesDAO = secretSeriesDAOFactory.using(configuration);
 
       ImmutableList.Builder<SecretSeriesAndContent> secretsBuilder = ImmutableList.builder();
 
-      for (SecretSeries series : secretSeriesDAO.getSecretSeries(expireMaxTime, group)) {
+      for (SecretSeries series : secretSeriesDAO.getSecretSeries(expireMaxTime, group,
+          expireMinTime, minName, limit)) {
         SecretContent content =
             secretContentDAO.getSecretContentById(series.currentVersion().get()).get();
         SecretSeriesAndContent seriesAndContent = SecretSeriesAndContent.of(series, content);
@@ -376,8 +421,50 @@ public class SecretDAO {
   }
 
   /**
+   *
+   * @param secretId, the secret's id
+   * @param versionIdx the first index to select in a list of versions sorted by creation time
+   * @param numVersions the number of versions after versionIdx to select in the list of versions
+   * @return all versions of a deleted secret, including the secret's content for each version,
+   * matching input parameters or Optional.absent().
+   */
+  public Optional<ImmutableList<SecretSeriesAndContent>> getDeletedSecretVersionsBySecretId(long secretId,
+      int versionIdx, int numVersions) {
+    checkArgument(versionIdx >= 0);
+    checkArgument(numVersions >= 0);
+
+    SecretContentDAO secretContentDAO = secretContentDAOFactory.using(dslContext.configuration());
+    SecretSeriesDAO secretSeriesDAO = secretSeriesDAOFactory.using(dslContext.configuration());
+
+    Optional<SecretSeries> series = secretSeriesDAO.getDeletedSecretSeriesById(secretId);
+    if (series.isPresent()) {
+      SecretSeries s = series.get();
+      Optional<ImmutableList<SecretContent>> contents =
+          secretContentDAO.getSecretVersionsBySecretId(secretId, versionIdx, numVersions);
+      if (contents.isPresent()) {
+        ImmutableList.Builder<SecretSeriesAndContent> b = new ImmutableList.Builder<>();
+        b.addAll(contents.get()
+            .stream()
+            .map(c ->SecretSeriesAndContent.of(s, c))
+            .collect(toList()));
+
+        return Optional.of(b.build());
+      }
+    }
+
+    return Optional.empty();
+  }
+
+  public List<SecretSeries> getSecretsWithDeletedName(String name) {
+    SecretSeriesDAO secretSeriesDAO = secretSeriesDAOFactory.using(dslContext.configuration());
+
+    return secretSeriesDAO.getSecretSeriesByDeletedName(name);
+  }
+
+  /**
    * @param name of secret series for which to reset secret version
    * @param versionId The identifier for the desired current version
+   * @param updater the user to be linked to this update
    * @throws NotFoundException if secret not found
    */
   public void setCurrentSecretVersionByName(String name, long versionId, String updater) {
@@ -403,7 +490,37 @@ public class SecretDAO {
   }
 
   /**
-   * Counts the total number of deleted secrets.
+   * Renames the secret, specified by the secret id, to the name provided
+   * We check to make sure there are no other secrets that have the same name - if so,
+   * we throw an exception to prevent multiple secrets from having the same name
+   * @param secretId
+   * @param name
+   */
+  public void renameSecretById(long secretId, String name, String creator) {
+    checkArgument(!name.isEmpty());
+    Optional<SecretSeries> secretSeriesWithName =
+        secretSeriesDAOFactory.using(dslContext.configuration()).getSecretSeriesByName(name);
+    if(secretSeriesWithName.isPresent()) {
+      throw new IllegalArgumentException(
+          String.format("name %s already used by an existing secret in keywhiz", name));
+    }
+
+    secretSeriesDAOFactory.using(dslContext.configuration())
+        .renameSecretSeriesById(secretId, name, creator, OffsetDateTime.now().toEpochSecond());
+  }
+
+  /**
+   * Updates the Secret Content ID for the given Secret
+   *
+   */
+  public void setCurrentSecretVersionBySecretId(long secretId, long secretContentId, String updater) {
+    secretSeriesDAOFactory.using(dslContext.configuration())
+        .setCurrentVersion(secretId, secretContentId, updater,
+        OffsetDateTime.now().toEpochSecond());
+  }
+
+  /**
+   * @return the total number of deleted secrets.
    */
   public int countDeletedSecrets() {
     return secretSeriesDAOFactory.using(dslContext.configuration())
@@ -411,9 +528,8 @@ public class SecretDAO {
   }
 
   /**
-   * Counts the number of secrets deleted before the specified cutoff.
-   *
    * @param deleteBefore the cutoff date; secrets deleted before this date will be counted
+   * @return the number of secrets deleted before the specified cutoff.
    */
   public int countSecretsDeletedBeforeDate(DateTime deleteBefore) {
     checkArgument(deleteBefore != null);
@@ -434,6 +550,7 @@ public class SecretDAO {
    * @param deletedBefore the cutoff date; secrets deleted before this date will be removed from the
    * database
    * @param sleepMillis how many milliseconds to sleep between each batch of removals
+   * @throws InterruptedException if interrupted while sleeping between batches
    */
   public void dangerPermanentlyRemoveSecretsDeletedBeforeDate(DateTime deletedBefore,
       int sleepMillis) throws InterruptedException {

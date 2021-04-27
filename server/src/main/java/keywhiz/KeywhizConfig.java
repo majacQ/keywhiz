@@ -29,6 +29,7 @@ import javax.validation.constraints.NotNull;
 import keywhiz.api.validation.ValidBase64;
 import keywhiz.auth.UserAuthenticatorFactory;
 import keywhiz.auth.cookie.CookieConfig;
+import keywhiz.service.config.ClientAuthConfig;
 import keywhiz.service.config.KeyStoreConfig;
 import keywhiz.service.config.Templates;
 import org.hibernate.validator.constraints.Length;
@@ -89,6 +90,12 @@ public class KeywhizConfig extends Configuration {
   @JsonProperty
   private String rowHmacCheck;
 
+  @JsonProperty
+  private String flywaySchemaTable;
+
+  @JsonProperty
+  private ClientAuthConfig clientAuthConfig;
+
   public enum RowHmacCheck {
     DISABLED, DISABLED_BUT_LOG, ENFORCED
   }
@@ -125,7 +132,7 @@ public class KeywhizConfig extends Configuration {
 
   /**
    * Customizes the migrations directory.
-   *
+   * <p>
    * The content of the directory might vary depending on the database engine. Having it
    * configurable is useful.
    *
@@ -146,17 +153,23 @@ public class KeywhizConfig extends Configuration {
     return Duration.parse(statusCacheExpiry);
   }
 
-  /** @return LDAP configuration to authenticate admin users. Absent if fakeLdap is true. */
+  /**
+   * @return LDAP configuration to authenticate admin users. Absent if fakeLdap is true.
+   */
   public UserAuthenticatorFactory getUserAuthenticatorFactory() {
     return userAuth;
   }
 
-  /** @return Configuration for authenticating session cookie provided by admin login. */
+  /**
+   * @return Configuration for authenticating session cookie provided by admin login.
+   */
   public CookieConfig getSessionCookieConfig() {
     return sessionCookie;
   }
 
-  /** @return Base64-encoded key used to encrypt authenticating cookies. */
+  /**
+   * @return Base64-encoded key used to encrypt authenticating cookies.
+   */
   // 256-bit key = 44 base64 characters
   @NotNull @ValidBase64 @Length(min = 44, max = 44)
   @JsonProperty
@@ -198,7 +211,30 @@ public class KeywhizConfig extends Configuration {
     }
   }
 
+  public String getFlywaySchemaTable() {
+    if (flywaySchemaTable == null) {
+      return "schema_version";
+    }
+    return flywaySchemaTable;
+  }
+
+  public ClientAuthConfig getClientAuthConfig() {
+    return clientAuthConfig;
+  }
+
   public static class TemplatedDataSourceFactory extends DataSourceFactory {
+    @Override public String getUrl() {
+      try {
+        String url = super.getUrl();
+        if (url == null) {
+          url = "";
+        }
+        return Templates.evaluateTemplate(url);
+      } catch (IOException e) {
+        throw new RuntimeException("Failure resolving database url template", e);
+      }
+    }
+
     @Override public String getPassword() {
       try {
         String password = super.getPassword();
@@ -211,8 +247,9 @@ public class KeywhizConfig extends Configuration {
       }
     }
 
-    // Sets the evaluated password before calling the parent's create method.
+    // Sets the evaluated password and URL before calling the parent's create method.
     @Override public ManagedDataSource build(MetricRegistry metricRegistry, String name) {
+      setUrl(getUrl());
       setPassword(getPassword());
       return super.build(metricRegistry, name);
     }

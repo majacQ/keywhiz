@@ -19,6 +19,7 @@ package keywhiz.service.resources.admin;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import io.dropwizard.jersey.params.LongParam;
+import java.net.URI;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -26,7 +27,7 @@ import javax.ws.rs.NotFoundException;
 import javax.ws.rs.core.Response;
 import keywhiz.api.ApiDate;
 import keywhiz.api.ClientDetailResponse;
-import keywhiz.api.CreateClientRequest;
+import keywhiz.api.automation.v2.CreateClientRequestV2;
 import keywhiz.api.model.Client;
 import keywhiz.api.model.Group;
 import keywhiz.api.model.SanitizedSecret;
@@ -55,7 +56,10 @@ public class ClientsResourceTest {
 
   User user = User.named("user");
   ApiDate now = ApiDate.now();
-  Client client = new Client(1, "client", "1st client", now, "test", now, "test", null, null, true, false);
+  Client client =
+      new Client(1, "client", "1st client", null, now, "test", now, "test", null, null, true, false
+      );
+
   AuditLog auditLog = new SimpleLogger();
 
   ClientsResource resource;
@@ -65,8 +69,14 @@ public class ClientsResourceTest {
   }
 
   @Test public void listClients() {
-    Client client1 = new Client(1, "client", "1st client", now, "test", now, "test", null, null, true, false);
-    Client client2 = new Client(2, "client2", "2nd client", now, "test", now, "test", null, null, true, false);
+    Client client1 =
+        new Client(1, "client", "1st client", null, now, "test", now, "test", null, null, true,
+            false
+        );
+    Client client2 =
+        new Client(2, "client2", "2nd client", null, now, "test", now, "test", null, null, true,
+            false
+        );
 
     when(clientDAO.getClients()).thenReturn(ImmutableSet.of(client1, client2));
 
@@ -74,9 +84,14 @@ public class ClientsResourceTest {
     assertThat(response).containsOnly(client1, client2);
   }
 
-  @Test public void createsClient() {
-    CreateClientRequest request = new CreateClientRequest("new-client-name");
-    when(clientDAO.createClient("new-client-name", "user", "")).thenReturn(42L);
+  @Test public void createsClient() throws Exception {
+    CreateClientRequestV2 request = CreateClientRequestV2.builder()
+        .name("new-client-name")
+        .description("description")
+        .spiffeId("spiffe//example.org/new-client-name")
+        .build();
+    when(clientDAO.createClient("new-client-name", "user", "description",
+        new URI("spiffe//example.org/new-client-name"))).thenReturn(42L);
     when(clientDAO.getClientById(42L)).thenReturn(Optional.of(client));
     when(aclDAO.getSanitizedSecretsFor(client)).thenReturn(ImmutableSet.of());
 
@@ -113,8 +128,9 @@ public class ClientsResourceTest {
   @Test public void includesAssociations() {
     Group group1 = new Group(0, "group1", null, null, null, null, null, null);
     Group group2 = new Group(0, "group2", null, null, null, null, null, null);
-    Secret secret = new Secret(15, "secret", null, () -> "supersecretdata", "checksum", now, "creator", now,
-        "updater", null, null, null, 0, 1L, now, "updater");
+    Secret secret =
+        new Secret(15, "secret", null, () -> "supersecretdata", "checksum", now, "creator", now,
+            "updater", null, null, null, 0, 1L, now, "updater");
 
     when(clientDAO.getClientById(1)).thenReturn(Optional.of(client));
     when(aclDAO.getGroupsFor(client)).thenReturn(Sets.newHashSet(group1, group2));
@@ -127,7 +143,7 @@ public class ClientsResourceTest {
   }
 
   @Test public void findClientByName() {
-    when(clientDAO.getClient(client.getName())).thenReturn(Optional.of(client));
+    when(clientDAO.getClientByName(client.getName())).thenReturn(Optional.of(client));
     assertThat(resource.getClientByName(user, "client")).isEqualTo(client);
   }
 
@@ -139,7 +155,7 @@ public class ClientsResourceTest {
 
   @Test(expected = NotFoundException.class)
   public void notFoundWhenRetrievingBadName() {
-    when(clientDAO.getClient("non-existent-client")).thenReturn(Optional.empty());
+    when(clientDAO.getClientByName("non-existent-client")).thenReturn(Optional.empty());
     resource.getClientByName(user, "non-existent-client");
   }
 

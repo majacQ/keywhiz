@@ -28,7 +28,6 @@ import keywhiz.api.model.Group;
 import keywhiz.api.model.SanitizedSecret;
 import keywhiz.api.model.Secret;
 import keywhiz.cli.configs.AddActionConfig;
-import keywhiz.cli.configs.AddOrUpdateActionConfig;
 import keywhiz.client.KeywhizClient;
 import keywhiz.client.KeywhizClient.NotFoundException;
 import org.junit.Before;
@@ -53,10 +52,12 @@ public class AddActionTest {
   AddActionConfig addActionConfig;
   AddAction addAction;
 
-  Client client = new Client(4, "newClient", null, null, null, null, null, null, null, true, false);
+  Client client =
+      new Client(4, "newClient", null, null, null, null, null, null, null, null, true, false);
   Group group = new Group(4, "newGroup", null, null, null, null, null, null);
-  Secret secret = new Secret(15, "newSecret", null, () -> "c2VjcmV0MQ==", "checksum", NOW, null, NOW, null, null, null,
-      ImmutableMap.of(), 0, 1L, NOW, null);
+  Secret secret =
+      new Secret(15, "newSecret", null, () -> "c2VjcmV0MQ==", "checksum", NOW, null, NOW, null,
+          null, null, ImmutableMap.of(), 0, 1L, NOW, null);
   SanitizedSecret sanitizedSecret = SanitizedSecret.fromSecret(secret);
   SecretDetailResponse secretDetailResponse = SecretDetailResponse.fromSecret(secret, null, null);
 
@@ -88,22 +89,27 @@ public class AddActionTest {
     when(keywhizClient.getSanitizedSecretByName(secret.getName()))
         .thenThrow(new NotFoundException()); // Call checks for existence.
 
-    when(keywhizClient.createSecret(secret.getName(), "", content, secret.getMetadata(), 1136214245))
+    when(
+        keywhizClient.createSecret(secret.getName(), "", content, secret.getMetadata(), 1136214245))
         .thenReturn(secretDetailResponse);
 
     addAction.run();
-    verify(keywhizClient, times(1)).createSecret(secret.getName(), "", content, secret.getMetadata(), 1136214245);
+    verify(keywhizClient, times(1)).createSecret(secret.getName(), "", content,
+        secret.getMetadata(), 1136214245);
   }
 
   @Test
   public void addCallsAddForClient() throws Exception {
     addActionConfig.addType = Arrays.asList("client");
     addActionConfig.name = client.getName();
+    addActionConfig.description = "description";
+    addActionConfig.spiffeId = "spiffe//example.org/client";
 
     when(keywhizClient.getClientByName(client.getName())).thenThrow(new NotFoundException());
 
     addAction.run();
-    verify(keywhizClient).createClient(addActionConfig.name);
+    verify(keywhizClient).createClient(addActionConfig.name, addActionConfig.getDescription(),
+        addActionConfig.getSpiffeId());
   }
 
   @Test
@@ -142,7 +148,8 @@ public class AddActionTest {
 
     addAction.run();
 
-    verify(keywhizClient, times(1)).createSecret(secret.getName(), "", content, secret.getMetadata(), 0);
+    verify(keywhizClient, times(1)).createSecret(secret.getName(), "", content,
+        secret.getMetadata(), 0);
   }
 
   @Test
@@ -156,7 +163,8 @@ public class AddActionTest {
     when(keywhizClient.getSanitizedSecretByName(secret.getName()))
         .thenThrow(new NotFoundException()); // Call checks for existence.
 
-    ImmutableMap<String,String> expected = ImmutableMap.of("owner", "example-name", "group", "example-group");
+    ImmutableMap<String, String> expected =
+        ImmutableMap.of("owner", "example-name", "group", "example-group");
 
     when(keywhizClient.createSecret(secret.getName(), "", content, expected, 0))
         .thenReturn(secretDetailResponse);

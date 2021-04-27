@@ -16,10 +16,9 @@
 
 package keywhiz.service.daos;
 
+import java.net.URI;
 import java.time.Instant;
 import java.time.OffsetDateTime;
-import java.time.temporal.ChronoField;
-import java.time.temporal.TemporalField;
 import java.util.Set;
 import javax.inject.Inject;
 import keywhiz.KeywhizTestRunner;
@@ -32,7 +31,6 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
-import static java.time.temporal.ChronoField.MILLI_OF_SECOND;
 import static java.time.temporal.ChronoField.NANO_OF_SECOND;
 import static keywhiz.jooq.tables.Clients.CLIENTS;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -48,7 +46,7 @@ public class ClientDAOTest {
   Client client1, client2;
   ClientDAO clientDAO;
 
-  @Before public void setUp() throws Exception {
+  @Before public void setUp() {
 
     clientDAO = clientDAOFactory.readwrite();
     long now = OffsetDateTime.now().toEpochSecond();
@@ -59,24 +57,34 @@ public class ClientDAOTest {
         .values("client2", "desc2", "creator", "updater", false, now, now)
         .execute();
 
-    client1 = clientDAO.getClient("client1").get();
-    client2 = clientDAO.getClient("client2").get();
+    client1 = clientDAO.getClientByName("client1").get();
+    client2 = clientDAO.getClientByName("client2").get();
   }
 
-  @Test public void createClient() {
+  @Test public void createClient() throws Exception {
     int before = tableSize();
-    clientDAO.createClient("newClient", "creator", "");
-    Client newClient = clientDAO.getClient("newClient").orElseThrow(RuntimeException::new);
+    clientDAO.createClient("newClient", "creator", "",
+        new URI("spiffe://test.env.com/newClient"));
+    Client newClient = clientDAO.getClientByName("newClient").orElseThrow(RuntimeException::new);
 
     assertThat(tableSize()).isEqualTo(before + 1);
     assertThat(clientDAO.getClients()).containsOnly(client1, client2, newClient);
+
+    assertThat(newClient.getCreatedBy()).isEqualTo("creator");
+    assertThat(newClient.getSpiffeId()).isEqualTo("spiffe://test.env.com/newClient");
   }
 
   @Test public void createClientReturnsId() {
-    long id = clientDAO.createClient("newClientWithSameId", "creator2", "");
-    Client clientById = clientDAO.getClient("newClientWithSameId")
+    long id = clientDAO.createClient("newClientWithSameId", "creator2", "", null);
+    Client clientByName = clientDAO.getClientByName("newClientWithSameId")
         .orElseThrow(RuntimeException::new);
-    assertThat(clientById.getId()).isEqualTo(id);
+    assertThat(clientByName.getId()).isEqualTo(id);
+  }
+
+  @Test public void createClientDropsEmptyStringSpiffeId() throws Exception {
+    clientDAO.createClient("firstWithoutSpiffe", "creator2", "", new URI(""));
+    // This creation should not fail, because an empty SPIFFE ID should be converted to null
+    clientDAO.createClient("secondWithoutSpiffe", "creator2", "", new URI(""));
   }
 
   @Test public void deleteClient() {
@@ -87,11 +95,11 @@ public class ClientDAOTest {
   }
 
   @Test public void getClientByName() {
-    assertThat(clientDAO.getClient("client1")).contains(client1);
+    assertThat(clientDAO.getClientByName("client1")).contains(client1);
   }
 
   @Test public void getNonExistentClientByName() {
-    assertThat(clientDAO.getClient("non-existent")).isEmpty();
+    assertThat(clientDAO.getClientByName("non-existent")).isEmpty();
   }
 
   @Test public void getClientById() {
@@ -124,8 +132,8 @@ public class ClientDAOTest {
     clientDAO.sawClient(client1, principal);
 
     // reload clients from db, as sawClient doesn't update in-memory object
-    Client client1v2 = clientDAO.getClient(client1.getName()).get();
-    Client client2v2 = clientDAO.getClient(client2.getName()).get();
+    Client client1v2 = clientDAO.getClientByName(client1.getName()).get();
+    Client client2v2 = clientDAO.getClientByName(client2.getName()).get();
 
     // verify client1 from db has updated lastSeen, and client2 hasn't changed
     assertThat(client1v2.getLastSeen()).isNotNull();

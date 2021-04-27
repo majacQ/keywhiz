@@ -29,14 +29,17 @@ import javax.ws.rs.NotFoundException;
 import javax.ws.rs.core.HttpHeaders;
 import javax.ws.rs.core.Response;
 import keywhiz.api.ApiDate;
-import keywhiz.api.CreateSecretRequest;
 import keywhiz.api.SecretDetailResponse;
 import keywhiz.api.automation.v2.CreateOrUpdateSecretRequestV2;
+import keywhiz.api.automation.v2.CreateSecretRequestV2;
 import keywhiz.api.automation.v2.PartialUpdateSecretRequestV2;
 import keywhiz.api.model.Client;
 import keywhiz.api.model.Group;
 import keywhiz.api.model.SanitizedSecret;
 import keywhiz.api.model.Secret;
+import keywhiz.api.model.SecretContent;
+import keywhiz.api.model.SecretSeries;
+import keywhiz.api.model.SecretSeriesAndContent;
 import keywhiz.auth.User;
 import keywhiz.log.AuditLog;
 import keywhiz.log.SimpleLogger;
@@ -54,6 +57,7 @@ import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -78,6 +82,22 @@ public class SecretsResourceTest {
 
   Secret secret = new Secret(22, "name", "desc", () -> "secret", "checksum", NOW, "creator", NOW,
       "updater", emptyMap, null, null, 1136214245, 1L, NOW, "user");
+
+  SecretSeriesAndContent secretSeriesAndContent1 =
+      SecretSeriesAndContent.of(
+          SecretSeries.of(1, "name1", "desc", NOW,
+              "user", NOW, "user", null, emptyMap, null),
+          SecretContent.of(101, 1, "blah", "checksum",
+              NOW, "creator", NOW, "updater",
+              emptyMap, 0));
+
+  SecretSeriesAndContent secretSeriesAndContent2 =
+      SecretSeriesAndContent.of(
+          SecretSeries.of(1, "name2", "desc", NOW,
+              "user", NOW, "user", null, emptyMap, null),
+          SecretContent.of(110, 1, "blah", "checksum",
+              NOW, "creator", NOW, "updater",
+              emptyMap, 0));
 
   AuditLog auditLog = new SimpleLogger();
 
@@ -129,8 +149,12 @@ public class SecretsResourceTest {
         .thenReturn(secretBuilder);
     when(secretBuilder.create()).thenReturn(secret);
 
-    CreateSecretRequest req = new CreateSecretRequest(secret.getName(),
-        secret.getDescription(), secret.getSecret(), emptyMap, 0);
+    CreateSecretRequestV2 req =
+        CreateSecretRequestV2.builder()
+            .name(secret.getName())
+            .description(secret.getDescription())
+            .content(secret.getSecret())
+            .build();
     Response response = resource.createSecret(user, req);
 
     assertThat(response.getStatus()).isEqualTo(201);
@@ -264,7 +288,11 @@ public class SecretsResourceTest {
     DataAccessException exception = new DataAccessException("");
     doThrow(exception).when(secretBuilder).create();
 
-    CreateSecretRequest req = new CreateSecretRequest("name", "desc", "content", emptyMap, 0);
+    CreateSecretRequestV2 req = CreateSecretRequestV2.builder()
+        .name("name")
+        .description("desc")
+        .content("content")
+        .build();
     resource.createSecret(user, req);
   }
 
@@ -299,7 +327,8 @@ public class SecretsResourceTest {
 
   @Test
   public void includesAssociations() {
-    Client client = new Client(0, "client", null, null, null, null, null, null, null, false, false);
+    Client client = new Client(0, "client", null, null, null, null, null, null, null, null, false, false
+    );
     Group group1 = new Group(0, "group1", null, null, null, null, null, null);
     Group group2 = new Group(0, "group2", null, null, null, null, null, null);
 
@@ -329,5 +358,65 @@ public class SecretsResourceTest {
   public void badNameNotFound() {
     when(secretController.getSecretByName("non-existent")).thenReturn(Optional.empty());
     resource.retrieveSecret(user, "non-existent");
+  }
+
+  @Test public void getSecretContentsBySecretId() {
+    when(secretDAO.getDeletedSecretVersionsBySecretId(1, 0, 10)).thenReturn(
+        Optional.of(ImmutableList.of(secretSeriesAndContent1, secretSeriesAndContent2)));
+
+    assertThat(resource.getSecretsContentsBySecretId(user, new LongParam(Long.toString(1)), 0, 10))
+        .containsExactlyInAnyOrder(secretSeriesAndContent1, secretSeriesAndContent2);
+  }
+
+  @Test public void setCurrentSecretVersionBySecretId() {
+    when(secretController.getSecretById(1)).thenReturn(Optional.of(secret));
+
+    Response response = resource.updateCurrentSecretVersion(user,
+        new LongParam(Long.toString(1)), new LongParam(Long.toString(10)));
+    verify(secretDAO).setCurrentSecretVersionBySecretId(1, 10, "user");
+    assertThat(response.getStatus()).isEqualTo(204);
+  }
+
+  @Test
+  public void setCurrentSecretVersionBySecretIdSecretNotFound() {
+    when(secretController.getSecretById(1)).thenReturn(Optional.empty());
+
+    Response response = resource.updateCurrentSecretVersion(user,
+        new LongParam(Long.toString(1)), new LongParam(Long.toString(10)));
+    verify(secretDAO).setCurrentSecretVersionBySecretId(1, 10, "user");
+    assertThat(response.getStatus()).isEqualTo(204);
+  }
+
+  @Test public void renameSecret() {
+    when(secretDAO.getSecretByName("name1")).thenReturn(Optional.empty());
+
+    Response response = resource.renameSecret(user,
+        new LongParam(Long.toString(1)), "name1");
+    verify(secretDAO).renameSecretById(1, "name1", "user");
+    assertThat(response.getStatus()).isEqualTo(204);
+  }
+
+  @Test
+  public void renameSecretNotFound() {
+    when(secretController.getSecretByName("name")).thenReturn(Optional.of(secret));
+
+    assertThatThrownBy(() -> resource.renameSecret(user, new LongParam(Long.toString(1)), "name"))
+        .hasMessage("That name is already taken by another secret")
+        .isInstanceOf(ConflictException.class);
+
+  }
+
+  @Test public void findDeletedSecretsByName() {
+    SecretSeries secretSeries1 = SecretSeries.of(1, "blah.name1.blah", "desc", NOW,
+                "user", NOW, "user", null, emptyMap, null);
+
+    SecretSeries secretSeries2 = SecretSeries.of(2, "blahblah.name1.blahh", "desc", NOW,
+        "user", NOW, "user", null, emptyMap, null);
+
+    when(secretDAO.getSecretsWithDeletedName("name1"))
+        .thenReturn(ImmutableList.of(secretSeries1, secretSeries2));
+
+    assertThat(resource.findDeletedSecretsByName(user, "name1"))
+        .containsExactlyInAnyOrder(secretSeries1, secretSeries2);
   }
 }

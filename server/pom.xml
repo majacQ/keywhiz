@@ -5,7 +5,7 @@
   <parent>
     <groupId>com.squareup.keywhiz</groupId>
     <artifactId>keywhiz-parent</artifactId>
-    <version>0.10.1-SNAPSHOT</version>
+    <version>0.10.2-SNAPSHOT</version>
   </parent>
 
   <artifactId>keywhiz-server</artifactId>
@@ -30,7 +30,7 @@
     <dependency>
       <groupId>com.squareup.keywhiz</groupId>
       <artifactId>keywhiz-log</artifactId>
-      <version>0.10.1-SNAPSHOT</version>
+      <version>0.10.2-SNAPSHOT</version>
     </dependency>
 
     <!-- Logging -->
@@ -51,7 +51,7 @@
     <dependency>
       <groupId>org.c02e.jpgpj</groupId>
       <artifactId>jpgpj</artifactId>
-      <version>0.6.1</version>
+      <version>1.0</version>
     </dependency>
 
     <!-- Guava makes the language better. -->
@@ -163,6 +163,18 @@
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>org.powermock</groupId>
+      <artifactId>powermock-module-junit4</artifactId>
+      <version>${powermock.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.powermock</groupId>
+      <artifactId>powermock-api-easymock</artifactId>
+      <version>${powermock.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
       <groupId>com.google.inject.extensions</groupId>
       <artifactId>guice-testlib</artifactId>
       <scope>test</scope>
@@ -187,7 +199,7 @@
     <dependency>
       <groupId>org.apache.httpcomponents</groupId>
       <artifactId>httpcore</artifactId>
-      <version>4.4.11</version>
+      <version>4.4.13</version>
     </dependency>
   </dependencies>
 

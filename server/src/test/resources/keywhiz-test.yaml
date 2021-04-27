@@ -47,8 +47,8 @@ logging:
 environment: testing
 
 database:
-  driverClass: com.mysql.jdbc.Driver
-  url: jdbc:mysql://localhost/keywhizdb_test?useUnicode=true&characterEncoding=utf8
+  driverClass: com.mysql.cj.jdbc.Driver
+  url: jdbc:mysql://address=(host=localhost)(%custom_mysql_port%)(useUnicode=true)(characterEncoding=utf8)/keywhizdb_test
   user: root
   properties:
     charSet: UTF-8
@@ -59,8 +59,8 @@ database:
   # password:
 
 readonlyDatabase:
-  driverClass: com.mysql.jdbc.Driver
-  url: jdbc:mysql://localhost/keywhizdb_test?useUnicode=true&characterEncoding=utf8
+  driverClass: com.mysql.cj.jdbc.Driver
+  url: jdbc:mysql://address=(host=localhost)(%custom_mysql_port%)(useUnicode=true)(characterEncoding=utf8)/keywhizdb_test
   user: root
   properties:
     charSet: UTF-8
@@ -149,3 +149,15 @@ contentKeyStore:
   alias: basekey
 
 rowHmacCheck: enforced
+
+flywaySchemaTable: schema_version
+
+clientAuthConfig:
+  xfcc:
+    - port: 4446
+      allowedClientNames: []
+      allowedSpiffeIds: []
+  type:
+    useCommonName: true
+    useSpiffeId: true
+  createMissingClients: true

@@ -17,6 +17,7 @@
 package keywhiz.service.daos;
 
 import com.google.common.collect.ImmutableSet;
+import java.net.URI;
 import java.security.Principal;
 import java.time.Duration;
 import java.time.Instant;
@@ -26,29 +27,23 @@ import java.util.Optional;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import keywhiz.api.model.Client;
-import keywhiz.api.model.SecretSeries;
 import keywhiz.auth.mutualssl.CertificatePrincipal;
 import keywhiz.jooq.tables.records.ClientsRecord;
 import keywhiz.service.config.Readonly;
 import keywhiz.service.crypto.RowHmacGenerator;
-import keywhiz.service.resources.automation.v2.BackfillRowHmacResource;
 import org.jooq.Configuration;
 import org.jooq.DSLContext;
 import org.jooq.Param;
 import org.jooq.impl.DSL;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.time.Instant.EPOCH;
 import static keywhiz.jooq.tables.Clients.CLIENTS;
 import static keywhiz.jooq.tables.Memberships.MEMBERSHIPS;
-import static keywhiz.jooq.tables.Secrets.SECRETS;
 import static org.jooq.impl.DSL.greatest;
 import static org.jooq.impl.DSL.when;
 
 public class ClientDAO {
-  private static final Logger logger = LoggerFactory.getLogger(ClientDAO.class);
   private final static Duration LAST_SEEN_THRESHOLD = Duration.ofSeconds(24 * 60 * 60);
 
   private final DSLContext dslContext;
@@ -56,13 +51,14 @@ public class ClientDAO {
   private final RowHmacGenerator rowHmacGenerator;
 
   private ClientDAO(DSLContext dslContext, ClientMapper clientMapper,
-                    RowHmacGenerator rowHmacGenerator) {
+      RowHmacGenerator rowHmacGenerator) {
     this.dslContext = dslContext;
     this.clientMapper = clientMapper;
     this.rowHmacGenerator = rowHmacGenerator;
   }
 
-  public long createClient(String name, String user, String description) {
+  public long createClient(String name, String user, String description,
+      @Nullable URI spiffeId) {
     ClientsRecord r = dslContext.newRecord(CLIENTS);
 
     long now = OffsetDateTime.now().toEpochSecond();
@@ -70,6 +66,12 @@ public class ClientDAO {
     long generatedId = rowHmacGenerator.getNextLongSecure();
     String rowHmac = rowHmacGenerator.computeRowHmac(
         CLIENTS.getName(), List.of(name, generatedId));
+
+    // Do not allow empty spiffe URIs
+    String spiffeStr = null;
+    if (spiffeId != null && !spiffeId.toASCIIString().isEmpty()) {
+      spiffeStr = spiffeId.toASCIIString();
+    }
 
     r.setId(generatedId);
     r.setName(name);
@@ -81,6 +83,7 @@ public class ClientDAO {
     r.setDescription(description);
     r.setEnabled(true);
     r.setAutomationallowed(false);
+    r.setSpiffeId(spiffeStr);
     r.setRowHmac(rowHmac);
     r.store();
 
@@ -110,9 +113,7 @@ public class ClientDAO {
 
     final Instant expiration;
     if (principal instanceof CertificatePrincipal) {
-      expiration = Optional.ofNullable((CertificatePrincipal) principal)
-          .map(p -> p.getCertificateExpiration())
-          .orElse(EPOCH);
+      expiration = ((CertificatePrincipal) principal).getCertificateExpiration();
     } else {
       expiration = EPOCH;
     }
@@ -136,8 +137,13 @@ public class ClientDAO {
     }
   }
 
-  public Optional<Client> getClient(String name) {
+  public Optional<Client> getClientByName(String name) {
     ClientsRecord r = dslContext.fetchOne(CLIENTS, CLIENTS.NAME.eq(name));
+    return Optional.ofNullable(r).map(clientMapper::map);
+  }
+
+  public Optional<Client> getClientBySpiffeId(URI spiffeId) {
+    ClientsRecord r = dslContext.fetchOne(CLIENTS, CLIENTS.SPIFFE_ID.eq(spiffeId.toASCIIString()));
     return Optional.ofNullable(r).map(clientMapper::map);
   }
 

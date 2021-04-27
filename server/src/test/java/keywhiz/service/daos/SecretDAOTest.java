@@ -19,12 +19,6 @@ package keywhiz.service.daos;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import java.util.AbstractMap.SimpleEntry;
-import java.util.List;
-import java.util.Optional;
-import javax.inject.Inject;
-import javax.ws.rs.BadRequestException;
-import javax.ws.rs.NotFoundException;
 import keywhiz.KeywhizTestRunner;
 import keywhiz.api.ApiDate;
 import keywhiz.api.automation.v2.PartialUpdateSecretRequestV2;
@@ -44,11 +38,19 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import javax.inject.Inject;
+import javax.ws.rs.BadRequestException;
+import javax.ws.rs.NotFoundException;
+import java.util.AbstractMap.SimpleEntry;
+import java.util.List;
+import java.util.Optional;
+
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.stream.Collectors.toList;
 import static keywhiz.jooq.tables.Secrets.SECRETS;
 import static keywhiz.jooq.tables.SecretsContent.SECRETS_CONTENT;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @RunWith(KeywhizTestRunner.class)
 public class SecretDAOTest {
@@ -222,7 +224,7 @@ public class SecretDAOTest {
     assertThat(tableSize(SECRETS_CONTENT)).isEqualTo(secretContentsBefore + 1);
 
     newSecret = secretDAO.getSecretByName(newSecret.series().name()).get();
-    assertThat(secretDAO.getSecrets(null, null)).containsOnly(secret1, secret2b, newSecret);
+    assertThat(secretDAO.getSecrets(null, null, null,null, null)).containsOnly(secret1, secret2b, newSecret);
   }
 
   @Test(expected = DataAccessException.class)
@@ -288,7 +290,7 @@ public class SecretDAOTest {
     assertThat(tableSize(SECRETS_CONTENT)).isEqualTo(secretContentsBefore + 1);
 
     newSecret = secretDAO.getSecretByName(newSecret.series().name()).get();
-    assertThat(secretDAO.getSecrets(null, null)).containsOnly(secret1, secret2b, newSecret);
+    assertThat(secretDAO.getSecrets(null, null, null, null, null)).containsOnly(secret1, secret2b, newSecret);
   }
 
   @Test public void createOrUpdateSecretWhenSecretExists() {
@@ -464,7 +466,7 @@ public class SecretDAOTest {
   }
 
   @Test public void getSecrets() {
-    assertThat(secretDAO.getSecrets(null, null)).containsOnly(secret1, secret2b);
+    assertThat(secretDAO.getSecrets(null, null, null, null, null)).containsOnly(secret1, secret2b);
   }
 
   @Test public void getSecretsByNameOnly() {
@@ -525,7 +527,165 @@ public class SecretDAOTest {
     assertThat(versions.get().size()).isEqualTo(1);
   }
 
+  @Test public void undeleteSecret() {
+    secretDAO.createSecret("toBeDeletedAndUndeleted", "encryptedShhh",
+        cryptographer.computeHmac("encryptedShhh".getBytes(UTF_8), "hmackey"), "creator",
+        ImmutableMap.of(), 0, "", null, null);
+
+    //Update secret so that there will be a new secrets content
+    secretDAO.createOrUpdateSecret("toBeDeletedAndUndeleted", "secretsgohere",
+        cryptographer.computeHmac("secretsgohere".getBytes(UTF_8), "hmackey"), "creator",
+        ImmutableMap.of(), 0, "", null, null);
+
+    secretDAO.deleteSecretsByName("toBeDeletedAndUndeleted");
+
+    Optional<SecretSeriesAndContent> undeleteSecret1 = secretDAO.getSecretByName("toBeDeletedAndUndeleted");
+    assertThat(undeleteSecret1).isEmpty();
+
+    secretDAO.createSecret("toBeDeletedAndUndeleted", "blah",
+        cryptographer.computeHmac("blah".getBytes(UTF_8), "hmackey"), "creator",
+        ImmutableMap.of(), 0, "", null, null);
+
+    secretDAO.deleteSecretsByName("toBeDeletedAndUndeleted");
+
+    Optional<SecretSeriesAndContent> undeleteSecret2 = secretDAO.getSecretByName("toBeDeletedAndUndeleted");
+    assertThat(undeleteSecret2).isEmpty();
+
+    // The old version of the secret should not be available
+    List<SecretSeries> oldDeletedSecrets =
+        secretDAO.getSecretsWithDeletedName("toBeDeletedAndUndeleted");
+    assertThat(oldDeletedSecrets.size()).isEqualTo(2);
+
+    //Because secret Ids are generated randomly, we need to record both secret ids to find the
+    //secret id with two secrets contents associated with it
+    long secretId = oldDeletedSecrets.get(0).id();
+    long otherSecretId = oldDeletedSecrets.get(1).id();
+
+    Optional<ImmutableList<SecretSeriesAndContent>> secretContents =
+        secretDAO.getDeletedSecretVersionsBySecretId(secretId, 0, 50);
+    assertThat(secretContents.isPresent());
+
+    //If secretId only has 1 secrets content associated, pick the other secret id and retrieve its secrets contents
+    if(secretContents.get().size() == 1) {
+      secretId = otherSecretId;
+      secretContents = secretDAO.getDeletedSecretVersionsBySecretId(secretId, 0, 50);
+    }
+
+    assertThat(secretContents.get().size()).isEqualTo(2);
+
+    //Arbitrarily pick the 0th secrets content associated with secretId to use in undeleting
+    long contentId = secretContents.get().get(0).content().id();
+
+    assertThat(secretDAO.getSecretByName("toBeDeletedAndUndeleted")).isEmpty();
+    secretDAO.setCurrentSecretVersionBySecretId(secretId, contentId, "updater");
+    secretDAO.renameSecretById(secretId, "toBeDeletedAndUndeleted", "creator");
+    Optional<SecretSeriesAndContent> undeletedSecretAndContent =
+        secretDAO.getSecretByName("toBeDeletedAndUndeleted");
+    assertThat(undeletedSecretAndContent).isPresent();
+    assertThat(undeletedSecretAndContent.get().content().id()).isEqualTo(contentId);
+  }
+
+  @Test public void undeleteSecretWithExistingSecretHavingDeletedName() {
+    secretDAO.createSecret("toBeDeletedAndUndeleted", "encryptedShhh",
+        cryptographer.computeHmac("encryptedShhh".getBytes(UTF_8), "hmackey"), "creator",
+        ImmutableMap.of(), 0, "", null, null);
+
+    //Update secret so that there will be a new secrets content
+    secretDAO.createOrUpdateSecret("toBeDeletedAndUndeleted", "secretsgohere",
+        cryptographer.computeHmac("secretsgohere".getBytes(UTF_8), "hmackey"), "creator",
+        ImmutableMap.of(), 0, "", null, null);
+
+    secretDAO.deleteSecretsByName("toBeDeletedAndUndeleted");
+
+    Optional<SecretSeriesAndContent> undeleteSecret1 = secretDAO.getSecretByName("toBeDeletedAndUndeleted");
+    assertThat(undeleteSecret1).isEmpty();
+
+    secretDAO.createSecret("toBeDeletedAndUndeleted", "blah",
+        cryptographer.computeHmac("blah".getBytes(UTF_8), "hmackey"), "creator",
+        ImmutableMap.of(), 0, "", null, null);
+
+    secretDAO.deleteSecretsByName("toBeDeletedAndUndeleted");
+
+    Optional<SecretSeriesAndContent> undeleteSecret2 = secretDAO.getSecretByName("toBeDeletedAndUndeleted");
+    assertThat(undeleteSecret2).isEmpty();
+
+    //Don't delete this secret so that when undeleting undeleteSecret1 later, we have to rename undeleteSecret1
+    secretDAO.createSecret("toBeDeletedAndUndeleted", "blah",
+        cryptographer.computeHmac("blah".getBytes(UTF_8), "hmackey"), "creator",
+        ImmutableMap.of(), 0, "", null, null);
+
+    Optional<SecretSeriesAndContent> undeleteSecret3 = secretDAO.getSecretByName("toBeDeletedAndUndeleted");
+    assertThat(undeleteSecret3).isPresent();
+
+    List<SecretSeries> oldDeletedSecrets =
+        secretDAO.getSecretsWithDeletedName("toBeDeletedAndUndeleted");
+    assertThat(oldDeletedSecrets.size()).isEqualTo(2);
+
+    //Because secret Ids are generated randomly, we need to record both secret ids to find the
+    //secret id with two secrets contents associated with it
+    long secretId = oldDeletedSecrets.get(0).id();
+    long otherSecretId = oldDeletedSecrets.get(1).id();
+    Optional<ImmutableList<SecretSeriesAndContent>> secretContents =
+        secretDAO.getDeletedSecretVersionsBySecretId(secretId, 0, 50);
+
+    //If secretId only has 1 secrets content associated, pick the other secret id and retrieve its secrets contents
+    if(secretContents.get().size() == 1) {
+      secretId = otherSecretId;
+      secretContents = secretDAO.getDeletedSecretVersionsBySecretId(secretId, 0, 50);
+    }
+    assertThat(secretContents.isPresent());
+    assertThat(secretContents.get().size()).isEqualTo(2);
+
+    //Arbitrarily pick the 0th secrets content associated with secretId to use in undeleting
+    long contentId = secretContents.get().get(0).content().id();
+
+    assertThat(secretDAO.getSecretByName("toBeDeletedAndUndeleted")).isPresent();
+    secretDAO.setCurrentSecretVersionBySecretId(secretId, contentId, "creator");
+
+    long secretIdFinal= secretId;
+    assertThatThrownBy(() -> secretDAO.renameSecretById(secretIdFinal, "toBeDeletedAndUndeleted", "creator"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("name toBeDeletedAndUndeleted already used by an existing secret in keywhiz");
+
+    //Because there is already an undeleted secret with the name "toBeDeletedAndUndeleted", we must
+    //rename the deleted secret with a different name
+    assertThat(secretDAO.getSecretByName("toBeDeletedAndUndeleted-2")).isEmpty();
+    secretDAO.renameSecretById(secretId, "toBeDeletedAndUndeleted-2", "creator");
+    Optional<SecretSeriesAndContent> undeletedSecretAndContent =
+        secretDAO.getSecretByName("toBeDeletedAndUndeleted-2");
+    assertThat(undeletedSecretAndContent).isPresent();
+    assertThat(undeletedSecretAndContent.get().content().id()).isEqualTo(contentId);
+  }
+
   //---------------------------------------------------------------------------------------
+  // renameSecret
+  //---------------------------------------------------------------------------------------
+  @Test public void renameSecretById() {
+    long secretId =
+        secretDAO.createSecret("toBeRenamed_renameSecretByIdName", "encryptedShhh",
+        cryptographer.computeHmac("encryptedShhh".getBytes(UTF_8), "hmackey"), "creator",
+        ImmutableMap.of(), 0, "", null, null);
+
+    Optional<SecretSeriesAndContent> secret = secretDAO.getSecretById(secretId);
+    assertThat(secret.get().series().name()).isEqualTo("toBeRenamed_renameSecretByIdName");
+
+    secretDAO.renameSecretById(secretId, "newName", "creator");
+
+    secret = secretDAO.getSecretById(secretId);
+    assertThat(secret).isPresent();
+    assertThat(secret.get().series().name()).isEqualTo("newName");
+
+    long secret2Id =
+        secretDAO.createSecret("toBeRenamed_renameSecretByIdName2", "encryptedShhh",
+            cryptographer.computeHmac("encryptedShhh".getBytes(UTF_8), "hmackey"), "creator",
+            ImmutableMap.of(), 0, "", null, null);
+
+    assertThatThrownBy(() -> secretDAO.renameSecretById(secret2Id,
+        "newName", "creator"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("name newName already used by an existing secret in keywhiz");
+  }
+    //---------------------------------------------------------------------------------------
   // permanentlyRemoveSecret
   //---------------------------------------------------------------------------------------
   @Test
@@ -608,5 +768,34 @@ public class SecretDAOTest {
 
   private int tableSize(Table table) {
     return jooqContext.fetchCount(table);
+  }
+
+  // Testing batch secrets
+
+  @Test public void getSecretsByName() {
+    List<String> secrets = List.of(secret1.series().name(), secret2b.series().name());
+    List<SecretSeriesAndContent> response = secretDAO.getSecretsByName(secrets);
+
+    assertThat(response.size()).isEqualTo(2);
+    assertThat(response).contains(secret1);
+    assertThat(response).contains(secret2b);
+  }
+
+  @Test public void getNonExistantSecretsByName() {
+    List<String> secrets = List.of("notasecret", "alsonotasecret");
+    List<SecretSeriesAndContent> response = secretDAO.getSecretsByName(secrets);
+
+    assertThat(response.size()).isEqualTo(0);
+  }
+
+  // Request duplicate, receive no duplicates
+
+  @Test public void getDuplicateSecretsByName() {
+    List<String> secrets = List.of(secret1.series().name(), secret2b.series().name(), secret1.series().name());
+    List<SecretSeriesAndContent> response = secretDAO.getSecretsByName(secrets);
+
+    assertThat(response.size()).isEqualTo(2);
+    assertThat(response).contains(secret1);
+    assertThat(response).contains(secret2b);
   }
 }

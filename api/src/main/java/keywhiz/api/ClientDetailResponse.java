@@ -18,11 +18,10 @@ package keywhiz.api;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.collect.ImmutableList;
+import javax.annotation.Nullable;
 import keywhiz.api.model.Client;
 import keywhiz.api.model.Group;
 import keywhiz.api.model.SanitizedSecret;
-
-import javax.annotation.Nullable;
 
 public class ClientDetailResponse {
   @JsonProperty
@@ -33,6 +32,9 @@ public class ClientDetailResponse {
 
   @JsonProperty
   public final String description;
+
+  @JsonProperty
+  public final String spiffeId;
 
   @JsonProperty
   public final ApiDate creationDate;
@@ -49,7 +51,9 @@ public class ClientDetailResponse {
   @JsonProperty
   public final ApiDate lastSeen;
 
-  /** List of secrets the group has access to. The secrets do not contain content. */
+  /**
+   * List of secrets the group has access to. The secrets do not contain content.
+   */
   @JsonProperty
   public final ImmutableList<SanitizedSecret> secrets;
 
@@ -59,6 +63,7 @@ public class ClientDetailResponse {
   public ClientDetailResponse(@JsonProperty("id") long id,
       @JsonProperty("name") String name,
       @JsonProperty("description") String description,
+      @JsonProperty("spiffeId") @Nullable String spiffeId,
       @JsonProperty("creationDate") ApiDate creationDate,
       @JsonProperty("updateDate") ApiDate updateDate,
       @JsonProperty("createdBy") String createdBy,
@@ -69,6 +74,7 @@ public class ClientDetailResponse {
     this.id = id;
     this.name = name;
     this.description = description;
+    this.spiffeId = spiffeId;
     this.creationDate = creationDate;
     this.updateDate = updateDate;
     this.createdBy = createdBy;
@@ -83,6 +89,7 @@ public class ClientDetailResponse {
     return new ClientDetailResponse(client.getId(),
         client.getName(),
         client.getDescription(),
+        client.getSpiffeId(),
         client.getCreatedAt(),
         client.getUpdatedAt(),
         client.getCreatedBy(),

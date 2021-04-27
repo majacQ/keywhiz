@@ -42,8 +42,10 @@ import keywhiz.api.model.AutomationClient;
 import keywhiz.api.model.Group;
 import keywhiz.api.model.SanitizedSecret;
 import keywhiz.api.model.SanitizedSecretWithGroups;
+import keywhiz.api.model.SanitizedSecretWithGroupsListAndCursor;
 import keywhiz.api.model.Secret;
 import keywhiz.api.model.SecretContent;
+import keywhiz.api.model.SecretRetrievalCursor;
 import keywhiz.api.model.SecretSeriesAndContent;
 import keywhiz.log.AuditLog;
 import keywhiz.log.Event;
@@ -73,8 +75,8 @@ import static java.util.stream.Collectors.toSet;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 
 /**
- * @parentEndpointName automation/v2-secret-management
- * @resourceDescription Automation endpoints to manage secrets
+ * parentEndpointName automation/v2-secret-management
+ * resourceDescription Automation endpoints to manage secrets
  */
 @Path("/automation/v2/secrets")
 public class SecretResource {
@@ -106,11 +108,10 @@ public class SecretResource {
   /**
    * Creates a secret and assigns to given groups
    *
-   * @excludeParams automationClient
    * @param request JSON request to create a secret
    *
-   * @responseMessage 201 Created secret and assigned to given groups
-   * @responseMessage 409 Secret already exists
+   * responseMessage 201 Created secret and assigned to given groups
+   * responseMessage 409 Secret already exists
    */
   @Timed @ExceptionMetered
   @POST
@@ -158,10 +159,9 @@ public class SecretResource {
   /**
    * Creates or updates (if it exists) a secret.
    *
-   * @excludeParams automationClient
    * @param request JSON request to create a secret
    *
-   * @responseMessage 201 Created secret and assigned to given groups
+   * responseMessage 201 Created secret and assigned to given groups
    */
   @Timed @ExceptionMetered
   @Path("{name}")
@@ -196,10 +196,9 @@ public class SecretResource {
   /**
    * Updates a subset of the fields of an existing secret
    *
-   * @excludeParams automationClient
    * @param request JSON request to update a secret
    *
-   * @responseMessage 201 Created secret and assigned to given groups
+   * responseMessage 201 Created secret and assigned to given groups
    */
   @Timed @ExceptionMetered
   @Path("{name}/partialupdate")
@@ -232,12 +231,11 @@ public class SecretResource {
    * names starting at "idx" from a list of secret names ordered by creation date, with
    * order depending on "newestFirst" (which defaults to "true")
    *
-   * @excludeParams automationClient
    * @param idx the index from which to start retrieval in the list of secret names
    * @param num the number of names to retrieve
    * @param newestFirst whether to list the most-recently-created names first
-   * @responseMessage 200 List of secret names
-   * @responseMessage 400 Invalid (negative) idx or num
+   * responseMessage 200 List of secret names
+   * responseMessage 400 Invalid (negative) idx or num
    */
   @Timed @ExceptionMetered
   @GET
@@ -264,12 +262,11 @@ public class SecretResource {
    * names starting at "idx" from a list of secrets ordered by creation date, with
    * order depending on "newestFirst" (which defaults to "true")
    *
-   * @excludeParams automationClient
    * @param idx the index from which to start retrieval in the list of secrets
    * @param num the number of names to retrieve
    * @param newestFirst whether to list the most-recently-created names first
-   * @responseMessage 200 List of secret names
-   * @responseMessage 400 Invalid (negative) idx or num
+   * responseMessage 200 List of secret names
+   * responseMessage 400 Invalid (negative) idx or num
    */
   @Timed @ExceptionMetered
   @Path("/v2")
@@ -291,10 +288,9 @@ public class SecretResource {
   /**
    * Retrieve listing of secrets expiring soon
    *
-   * @excludeParams automationClient
    * @param time timestamp for farthest expiry to include
    *
-   * @responseMessage 200 List of secrets expiring soon
+   * responseMessage 200 List of secrets expiring soon
    */
   @Timed @ExceptionMetered
   @Path("expiring/{time}")
@@ -310,10 +306,9 @@ public class SecretResource {
   /**
    * Retrieve listing of secrets expiring soon
    *
-   * @excludeParams automationClient
    * @param time timestamp for farthest expiry to include
    *
-   * @responseMessage 200 List of secrets expiring soon
+   * responseMessage 200 List of secrets expiring soon
    */
   @Timed @ExceptionMetered
   @Path("expiring/v2/{time}")
@@ -325,20 +320,66 @@ public class SecretResource {
   }
 
   /**
-   * Retrieve listing of secrets expiring soon
+   * Retrieve listing of secrets expiring soon (i. e. before the time specified in "maxTime").
+   * The query parameters can be used to introduce pagination.  Instead of retrieving all secrets
+   * expiring before maxTime, clients can retrieve all secrets expiring between minTime and maxTime,
+   * or up to "limit" secrets expiring between minTime and maxTime, or "limit" secrets starting
+   * at offset "offset" between minTime and maxTime.
    *
-   * @excludeParams automationClient
-   * @param time timestamp for farthest expiry to include
+   * Since limit + offset will be slow for large offsets, pagination should primarily be enforced
+   * by adjusting minTime and maxTime.
    *
-   * @responseMessage 200 List of secrets expiring soon
+   * The returned secrets will be sorted in increasing order of expiration time.
+   *
+   * @param maxTime timestamp for farthest expiry to include (exclusive)
+   *
+   * responseMessage 200 List of secrets expiring soon
    */
   @Timed @ExceptionMetered
   @Path("expiring/v3/{time}")
   @GET
   @Produces(APPLICATION_JSON)
-  public Iterable<SanitizedSecretWithGroups> secretListingExpiringV3(@Auth AutomationClient automationClient, @PathParam("time") Long time) {
-    List<SanitizedSecretWithGroups> secrets = secretControllerReadOnly.getExpiringSanitizedSecrets(time);
-    return secrets;
+  public Iterable<SanitizedSecretWithGroups> secretListingExpiringV3(@Auth AutomationClient automationClient,
+      @PathParam("time") Long maxTime) {
+    return secretControllerReadOnly.getSanitizedSecretsWithGroups(maxTime);
+  }
+
+  /**
+   * Retrieve listing of secrets expiring soon.  The resulting secrets will be sorted in increasing
+   * order of expiration time, and alphabetically within the same expiration time.
+   * <p>
+   * If names in Keywhiz are no longer unique, this endpoint will potentially skip secrets since it
+   * returns names strictly greater than the specified name.
+   * <p>
+   * If this method returns a cursor, that cursor should be passed back into this method until the
+   * returned cursor is null.  This allows pagination.
+   *
+   * @param minTime timestamp for nearest expiry to include; if null, defaults to current time
+   * @param maxTime timestamp for farthest expiry to include (exclusive)
+   * @param limit   maximum number of secrets and groups to return
+   * @param cursor  input allowing the server to return paginated output (as returned from this
+   *                method)
+   *
+   * responseMessage 200 List of secrets expiring soon and a cursor which will be null only if all
+   * results matching the criteria have been returned, and otherwise should be passed into the next
+   * call to this method.
+   */
+  @Timed @ExceptionMetered
+  @Path("expiring/v4")
+  @GET
+  @Produces(APPLICATION_JSON)
+  public SanitizedSecretWithGroupsListAndCursor secretListingExpiringV4(
+      @Auth AutomationClient automationClient,
+      @QueryParam("minTime")  Long minTime,
+      @QueryParam("maxTime") Long maxTime,
+      @QueryParam("limit") Integer limit,
+      @QueryParam("cursor") String cursor) {
+    SecretRetrievalCursor cursorDecoded = null;
+    if (cursor != null) {
+      cursorDecoded = SecretRetrievalCursor.fromUrlEncodedString(cursor);
+    }
+    return secretControllerReadOnly.getSanitizedSecretsWithGroupsAndCursor(minTime, maxTime, limit,
+        cursorDecoded);
   }
 
   /**
@@ -443,10 +484,9 @@ public class SecretResource {
   /**
    * Retrieve listing of secrets expiring soon in a group
    *
-   * @excludeParams automationClient
    * @param time timestamp for farthest expiry to include
    * @param name Group name
-   * @responseMessage 200 List of secrets expiring soon in group
+   * responseMessage 200 List of secrets expiring soon in group
    */
   @Timed @ExceptionMetered
   @Path("expiring/{time}/{name}")
@@ -465,11 +505,10 @@ public class SecretResource {
   /**
    * Retrieve information on a secret series
    *
-   * @excludeParams automationClient
    * @param name Secret series name
    *
-   * @responseMessage 200 Secret series information retrieved
-   * @responseMessage 404 Secret series not found
+   * responseMessage 200 Secret series information retrieved
+   * responseMessage 404 Secret series not found
    */
   @Timed @ExceptionMetered
   @GET
@@ -487,11 +526,10 @@ public class SecretResource {
   /**
    * Retrieve information on a secret series
    *
-   * @excludeParams automationClient
    * @param name Secret series name
    *
-   * @responseMessage 200 Secret series information retrieved
-   * @responseMessage 404 Secret series not found
+   * responseMessage 200 Secret series information retrieved
+   * responseMessage 404 Secret series not found
    */
   @Timed @ExceptionMetered
   @GET
@@ -509,9 +547,8 @@ public class SecretResource {
    * the database); returns a response containing the contents of found
    * secrets and a list of any missing secrets.
    *
-   * @excludeParams automationClient
    *
-   * @responseMessage 200 Secret series information retrieved
+   * responseMessage 200 Secret series information retrieved
    */
   @Timed @ExceptionMetered
   @POST
@@ -557,9 +594,9 @@ public class SecretResource {
    * @param name Secret series name
    * @param versionIdx The index in the list of versions of the first version to retrieve
    * @param numVersions The number of versions to retrieve
-   * @excludeParams automationClient
-   * @responseMessage 200 Secret series information retrieved
-   * @responseMessage 404 Secret series not found
+   *
+   * responseMessage 200 Secret series information retrieved
+   * responseMessage 404 Secret series not found
    */
   @Timed @ExceptionMetered
   @GET
@@ -584,10 +621,10 @@ public class SecretResource {
    * Reset the current version of the given secret to the given version index.
    *
    * @param request A request to update a given secret
-   * @excludeParams automationClient
-   * @responseMessage 201 Secret series current version updated successfully
-   * @responseMessage 400 Invalid secret version specified
-   * @responseMessage 404 Secret series not found
+   *
+   * responseMessage 201 Secret series current version updated successfully
+   * responseMessage 400 Invalid secret version specified
+   * responseMessage 404 Secret series not found
    */
   @Timed @ExceptionMetered
   @Path("{name}/setversion")
@@ -610,11 +647,10 @@ public class SecretResource {
   /**
    * Listing of groups a secret is assigned to
    *
-   * @excludeParams automationClient
    * @param name Secret series name
    *
-   * @responseMessage 200 Listing succeeded
-   * @responseMessage 404 Secret series not found
+   * responseMessage 200 Listing succeeded
+   * responseMessage 404 Secret series not found
    */
   @Timed @ExceptionMetered
   @GET
@@ -633,12 +669,11 @@ public class SecretResource {
   /**
    * Modify the groups a secret is assigned to
    *
-   * @excludeParams automationClient
    * @param name Secret series name
    * @param request JSON request to modify groups
    *
-   * @responseMessage 201 Group membership changed
-   * @responseMessage 404 Secret series not found
+   * responseMessage 201 Group membership changed
+   * responseMessage 404 Secret series not found
    */
   @Timed @ExceptionMetered
   @PUT
@@ -678,11 +713,10 @@ public class SecretResource {
   /**
    * Delete a secret series
    *
-   * @excludeParams automationClient
    * @param name Secret series name
    *
-   * @responseMessage 204 Secret series deleted
-   * @responseMessage 404 Secret series not found
+   * responseMessage 204 Secret series deleted
+   * responseMessage 404 Secret series not found
    */
   @Timed @ExceptionMetered
   @DELETE

@@ -16,16 +16,16 @@
 
 package keywhiz.service.daos;
 
+import java.util.Optional;
 import keywhiz.api.ApiDate;
 import keywhiz.api.model.Client;
 import keywhiz.jooq.tables.records.ClientsRecord;
 import org.jooq.RecordMapper;
-import java.util.Optional;
 
 /**
  * Jooq has the ability to map records to classes using Reflection. We however need a mapper because
  * the constructor's parameter and the columns in the database do not share the same order.
- *
+ * <p>
  * In general, I feel having a mapper is cleaner, so it might not be a bad thing.
  */
 class ClientMapper implements RecordMapper<ClientsRecord, Client> {
@@ -37,6 +37,7 @@ class ClientMapper implements RecordMapper<ClientsRecord, Client> {
         r.getId(),
         r.getName(),
         r.getDescription(),
+        r.getSpiffeId(),
         new ApiDate(r.getCreatedat()),
         r.getCreatedby(),
         new ApiDate(r.getUpdatedat()),
