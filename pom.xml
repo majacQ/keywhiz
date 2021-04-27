@@ -36,7 +36,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-  <<<<<<< master
+  &lt;&lt;&lt;&lt;&lt;&lt;&lt; master
     <autovalue.version>1.7.5</autovalue.version>
   =======
     <autovalue.version>1.7.4</autovalue.version>
@@ -45,8 +45,8 @@
     <!-- 1.2.0-1 is the last version of dropwizard-raven JAR. The development continues under dropwizard-sentry -->
     <dropwizard-raven.version>1.2.0-1</dropwizard-raven.version>
     <guice.version>4.2.3</guice.version>
-  <<<<<<< master
-  <<<<<<< snyk-upgrade-f2c17bd77b274a8cef7edf7a66c631c1
+  &lt;&lt;&lt;&lt;&lt;&lt;&lt; master
+  &lt;&lt;&lt;&lt;&lt;&lt;&lt; snyk-upgrade-f2c17bd77b274a8cef7edf7a66c631c1
     <jackson.version>2.12.2</jackson.version>
     <jackson.databind.version>2.10.0.pr1</jackson.databind.version>
   =======
@@ -142,7 +142,7 @@
       <dependency>
         <groupId>com.beust</groupId>
         <artifactId>jcommander</artifactId>
-  <<<<<<< master
+  &lt;&lt;&lt;&lt;&lt;&lt;&lt; master
         <version>1.81</version>
   =======
         <version>1.78</version>
@@ -278,12 +278,12 @@
       <dependency>
         <groupId>junit</groupId>
         <artifactId>junit</artifactId>
-        <version>4.13.1</version>
+        <version>4.13.2</version>
       </dependency>
       <dependency>
         <groupId>org.apache.commons</groupId>
         <artifactId>commons-lang3</artifactId>
-  <<<<<<< master
+  &lt;&lt;&lt;&lt;&lt;&lt;&lt; master
         <version>3.12.0</version>
   =======
         <version>3.11</version>
@@ -292,7 +292,7 @@
       <dependency>
         <groupId>org.assertj</groupId>
         <artifactId>assertj-core</artifactId>
-  <<<<<<< master
+  &lt;&lt;&lt;&lt;&lt;&lt;&lt; master
         <version>3.19.0</version>
   =======
         <version>3.18.0</version>
@@ -321,7 +321,7 @@
       <dependency>
         <groupId>org.flywaydb</groupId>
         <artifactId>flyway-core</artifactId>
-  <<<<<<< master
+  &lt;&lt;&lt;&lt;&lt;&lt;&lt; master
         <version>7.7.1</version>
   =======
         <version>7.5.2</version>
@@ -355,7 +355,7 @@
       <dependency>
         <groupId>org.mockito</groupId>
         <artifactId>mockito-core</artifactId>
-  <<<<<<< master
+  &lt;&lt;&lt;&lt;&lt;&lt;&lt; master
         <version>3.8.0</version>
   =======
         <version>3.5.15</version>
@@ -656,7 +656,7 @@
         <plugin>
           <groupId>org.flywaydb</groupId>
           <artifactId>flyway-maven-plugin</artifactId>
-  <<<<<<< master
+  &lt;&lt;&lt;&lt;&lt;&lt;&lt; master
           <version>7.7.2</version>
   =======
           <version>7.5.2</version>
