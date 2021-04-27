@@ -25,6 +25,7 @@ import static keywhiz.testing.JsonHelpers.jsonFixture;
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class ClientDetailResponseTest {
+  <<<<<<< master
   private ClientDetailResponse clientDetailResponse = new ClientDetailResponse(
       9875,
       "Client Name",
@@ -37,6 +38,21 @@ public class ClientDetailResponseTest {
       ApiDate.parse("2012-09-10T03:15:30.001Z"),
       ImmutableList.of(),
       ImmutableList.of());
+  =======
+  @Test public void serializesCorrectly() throws Exception {
+    ClientDetailResponse clientDetailResponse = new ClientDetailResponse(
+        9875,
+        "Client Name",
+        "Client Description",
+        "spiffe//example.org/client-name",
+        ApiDate.parse("2012-08-01T13:15:30.001Z"),
+        ApiDate.parse("2012-09-10T03:15:30.001Z"),
+        "creator-user",
+        "updater-user",
+        ApiDate.parse("2012-09-10T03:15:30.001Z"),
+        ImmutableList.of(),
+        ImmutableList.of());
+  >>>>>>> backfill_row_hmac
 
   @Test public void roundTripSerialization() throws Exception {
     assertThat(fromJson(asJson(clientDetailResponse), ClientDetailResponse.class)).isEqualTo(

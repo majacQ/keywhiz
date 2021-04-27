@@ -81,6 +81,7 @@ public class ClientAuthFactory {
     this.clientAuthConfig = clientAuthConfig;
   }
 
+  <<<<<<< master
   /**
    * Extracts a client (which may be an AutomationClient--see AutomationClientAuthFactory)
    * from the input data. This client may be identified in multiple ways.
@@ -120,6 +121,13 @@ public class ClientAuthFactory {
     // caller ID header.
     // If the configuration is not present, traffic _must_ identify its
     // clients using the request's security context.
+  =======
+  public Client provide(ContainerRequest containerRequest,
+      HttpServletRequest httpServletRequest) {
+    // Ports must either always send an x-forwarded-client-cert header, or
+    // never send this header. This also throws an error if a single port
+    // has multiple configurations.
+  >>>>>>> backfill_row_hmac
     int requestPort = httpServletRequest.getLocalPort();
     Optional<XfccSourceConfig> possibleXfccConfig =
         getXfccConfigForPort(requestPort);
@@ -127,15 +135,19 @@ public class ClientAuthFactory {
     List<String> xfccHeaderValues =
         Optional.ofNullable(containerRequest.getRequestHeader(XFCC_HEADER_NAME)).orElse(List.of());
 
+  <<<<<<< master
     // WARNING: This code assumes that the XFCC header will always be set by the proxy
     // EVEN IF the callerSpiffeId header is also set! (If both headers are set, only
     // the callerSpiffeIdHeader identifies the client.)
+  =======
+  >>>>>>> backfill_row_hmac
     if (possibleXfccConfig.isEmpty() != xfccHeaderValues.isEmpty()) {
       throw new NotAuthorizedException(format(
           "Port %d is configured to %s receive traffic with the %s header set",
           requestPort, possibleXfccConfig.isEmpty() ? "never" : "only", XFCC_HEADER_NAME));
     }
 
+  <<<<<<< master
     // Extract information about the entity that connected directly to Keywhiz.
     // This must be identified from the request's security context, rather than
     // easily modified information like a header.
@@ -143,11 +155,17 @@ public class ClientAuthFactory {
     // This entity may be a Keywhiz client, or it may be a proxy
     // forwarding the real Keywhiz client information.
     Principal connectedPrincipal = getPrincipal(containerRequest).orElseThrow(
+  =======
+    // Extract information about the requester. This may be a Keywhiz client, or it may be a proxy
+    // forwarding the real Keywhiz client information in the x-forwarded-client-certs header
+    Principal requestPrincipal = getPrincipal(containerRequest).orElseThrow(
+  >>>>>>> backfill_row_hmac
         () -> new NotAuthorizedException("Not authorized as Keywhiz client"));
 
     // Extract client information based on the x-forwarded-client-cert header or
     // on the security context of this request
     if (possibleXfccConfig.isEmpty()) {
+  <<<<<<< master
       // The XFCC header is not used; use the security context of this request to
       // identify the client
       return authenticateClientFromPrincipal(connectedPrincipal);
@@ -155,6 +173,13 @@ public class ClientAuthFactory {
       // Use either the XFCC header or a caller-ID header to identify the client.
       return authenticateClientFromForwardedData(possibleXfccConfig.get(), xfccHeaderValues,
           connectedPrincipal, containerRequest);
+  =======
+      // The XFCC header is not used; use the security context of this request to identify the client
+      return authenticateClientFromPrincipal(requestPrincipal);
+    } else {
+      return authorizeClientFromXfccHeader(possibleXfccConfig.get(), xfccHeaderValues,
+          requestPrincipal, containerRequest);
+  >>>>>>> backfill_row_hmac
     }
   }
 
@@ -177,6 +202,7 @@ public class ClientAuthFactory {
     }
   }
 
+  <<<<<<< master
   private Client authenticateClientFromForwardedData(XfccSourceConfig xfccConfig,
       List<String> xfccHeaderValues, Principal connectedPrincipal,
       ContainerRequest containerRequest) {
@@ -250,6 +276,52 @@ public class ClientAuthFactory {
    *                         that only proxies are allowed to use
    */
   private void validateForwardedClientDataAllowed(XfccSourceConfig xfccConfig, Principal requestPrincipal) {
+  =======
+  private Client authorizeClientFromXfccHeader(XfccSourceConfig xfccConfig,
+      List<String> xfccHeaderValues, Principal requestPrincipal,
+      ContainerRequest containerRequest) {
+    // Do not allow the XFCC header to be set by all incoming traffic. This throws a
+    // NotAuthorizedException when the traffic is not coming from a source allowed to set the
+    // header.
+    validateXfccHeaderAllowed(xfccConfig, requestPrincipal);
+
+    Optional<String> callerSpiffeIdHeader = Optional.ofNullable(xfccConfig.callerSpiffeIdHeader());
+    List<String> callerSpiffeIdList = callerSpiffeIdHeader.map(
+        header -> Optional.ofNullable(containerRequest.getRequestHeader(header))
+            .orElse(List.of()))
+        .orElse(List.of());
+    int size = callerSpiffeIdList.size();
+
+    Optional<URI> callerSpiffeId = callerSpiffeIdHeader.flatMap(
+        header -> ClientAuthenticator.getSpiffeIdFromHeader(containerRequest, header));
+
+    if (size > 1 || size == 1 && callerSpiffeId.isEmpty()) {
+      throw new NotAuthorizedException(format(
+          "Invalid caller Spiffe Id header. It should contain only one URI and follow Spiffe Id format. size: %d, header: %s",
+          size, callerSpiffeIdList));
+    }
+
+    if (callerSpiffeId.isPresent()) {
+      SpiffePrincipal spiffePrincipal = new SpiffePrincipal(callerSpiffeId.get());
+      return authenticateClientFromPrincipal(spiffePrincipal);
+    }
+
+    // Extract client information from the XFCC header
+    X509Certificate clientCert =
+        getClientCertFromXfccHeaderEnvoyFormatted(xfccHeaderValues).orElseThrow(() ->
+            new NotAuthorizedException(
+                format("unable to parse client certificate from %s header", XFCC_HEADER_NAME))
+        );
+
+    CertificatePrincipal certificatePrincipal =
+        new CertificatePrincipal(clientCert.getSubjectDN().toString(),
+            new X509Certificate[] { clientCert });
+
+    return authenticateClientFromPrincipal(certificatePrincipal);
+  }
+
+  private void validateXfccHeaderAllowed(XfccSourceConfig xfccConfig, Principal requestPrincipal) {
+  >>>>>>> backfill_row_hmac
     if (clientAuthConfig == null || clientAuthConfig.xfccConfigs() == null) {
       throw new NotAuthorizedException(
           format(

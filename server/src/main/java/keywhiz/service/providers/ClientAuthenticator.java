@@ -51,6 +51,7 @@ public class ClientAuthenticator {
     this.clientAuthConfig = clientAuthConfig;
   }
 
+  <<<<<<< master
   /**
    * Retrieve a client based on the name and/or SPIFFE ID included in the given
    * principal.
@@ -61,6 +62,8 @@ public class ClientAuthenticator {
    * @return the requested client, or Optional.empty() if it does not
    * exist and createMissingClient was not set
    */
+  =======
+  >>>>>>> backfill_row_hmac
   public Optional<Client> authenticate(Principal principal, boolean createMissingClient) {
     // Try to retrieve clients based on the client name and SPIFFE ID
     Optional<String> possibleClientName = getClientName(principal);
@@ -210,6 +213,7 @@ public class ClientAuthenticator {
         });
   }
 
+  <<<<<<< master
   /**
    * Get a spiffe ID from a header, which must contain at most one entry and have
    * that entry match the expected format for a SPIFFE URI. (If the header contains
@@ -238,6 +242,24 @@ public class ClientAuthenticator {
       return Optional.empty();
     } else if (spiffeUriNames.size() > 1) {
       logger.warn("Got multiple SPIFFE URIs from header {}: {}", spiffeIdHeaderName, spiffeUriNames);
+  =======
+  static Optional<URI> getSpiffeIdFromHeader(ContainerRequest containerRequest,
+      String spiffeIdHeader) {
+    List<String> spiffeIdHeaderValues =
+        Optional.ofNullable(containerRequest.getRequestHeader(spiffeIdHeader)).orElse(List.of());
+    List<String> spiffeUriNames = spiffeUriNames(spiffeIdHeaderValues);
+
+    if (spiffeUriNames.isEmpty()) {
+      logger.warn("No SPIFFE URI found from header {}", spiffeIdHeader);
+      return Optional.empty();
+    } else if (spiffeUriNames.size() > 1) {
+      logger.warn("Got multiple SPIFFE URIs from header {}: {}", spiffeIdHeader, spiffeUriNames);
+      return Optional.empty();
+    } else if (spiffeIdHeaderValues.size() > 1) {
+      logger.warn(
+          "Multiple URIs are not allowed in the header {} that includes a SPIFFE URI (URIs: {})",
+          spiffeIdHeader, spiffeIdHeaderValues);
+  >>>>>>> backfill_row_hmac
       return Optional.empty();
     }
 
@@ -247,7 +269,12 @@ public class ClientAuthenticator {
     } catch (URISyntaxException e) {
       logger.warn(
           format("Error parsing SPIFFE URI (%s) from the header %s as a URI", uri,
+  <<<<<<< master
               spiffeIdHeaderName), e);
+  =======
+              spiffeIdHeader),
+          e);
+  >>>>>>> backfill_row_hmac
       return Optional.empty();
     }
   }

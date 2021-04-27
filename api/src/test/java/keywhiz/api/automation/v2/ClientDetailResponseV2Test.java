@@ -28,6 +28,7 @@ import static keywhiz.testing.JsonHelpers.jsonFixture;
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class ClientDetailResponseV2Test {
+  <<<<<<< master
   private ClientDetailResponseV2 clientDetailResponse = new AutoValue_ClientDetailResponseV2(
       "Client Name",
       "Client Description",
@@ -47,6 +48,22 @@ public class ClientDetailResponseV2Test {
   @Test public void deserializesCorrectly() throws Exception {
     assertThat(fromJson(jsonFixture("fixtures/v2/clientDetailResponse.json"),
         ClientDetailResponseV2.class)).isEqualTo(clientDetailResponse);
+  =======
+  @Test public void serializesCorrectly() throws Exception {
+    ClientDetailResponseV2 clientDetailResponse = new AutoValue_ClientDetailResponseV2(
+        "Client Name",
+        "Client Description",
+        "spiffe//example.org/client-name",
+        OffsetDateTime.parse("2012-08-01T13:15:30Z").toEpochSecond(),
+        OffsetDateTime.parse("2012-09-10T03:15:30Z").toEpochSecond(),
+        "creator-user",
+        "updater-user",
+        Optional.of(OffsetDateTime.parse("2012-09-10T03:15:30Z").toEpochSecond())
+    );
+
+    assertThat(asJson(clientDetailResponse))
+        .isEqualTo(jsonFixture("fixtures/v2/clientDetailResponse.json"));
+  >>>>>>> backfill_row_hmac
   }
 
   @Test public void deserializesNullLastSeenCorrectly() throws Exception {
