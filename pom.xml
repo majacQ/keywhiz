@@ -42,7 +42,7 @@
     <dropwizard-raven.version>1.2.0-1</dropwizard-raven.version>
     <guice.version>4.2.3</guice.version>
     <jackson.version>2.12.1</jackson.version>
-    <jackson.databind.version>2.10.0.pr1</jackson.databind.version>
+    <jackson.databind.version>2.12.2</jackson.databind.version>
     <jooq.version>3.14.7</jooq.version>
     <powermock.version>2.0.9</powermock.version>
     <slf4j.version>1.7.30</slf4j.version>
@@ -582,7 +582,7 @@
               <configuration>
                 <rules>
                   <evaluateBeanshell>
-                    <condition>javax.crypto.Cipher.getMaxAllowedKeyLength("AES") &gt; 128
+                    <condition>javax.crypto.Cipher.getMaxAllowedKeyLength("AES") > 128
                     </condition>
                     <message>
                       Please install the unlimited strength JCE crypt policy files for your Java
