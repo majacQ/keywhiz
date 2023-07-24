@@ -65,7 +65,7 @@
     <slf4j.version>1.7.30</slf4j.version>
     <mysql.version>8.0.22</mysql.version>
   >>>>>>> backfill_row_hmac
-    <logback.version>1.2.3</logback.version>
+    <logback.version>1.2.9</logback.version>
 
     <custom.build.directory>target</custom.build.directory>
   </properties>
